@@ -1,0 +1,38 @@
+dataset:
+  name: docling-project/DocLayNet-v1.1
+  split: val
+  doc_category: scientific_articles
+  limit: 20
+  seed: 42
+
+runtime:
+  output_dir: /kaggle/working/ocr_benchmark_outputs
+  image_format: png
+  image_max_side: 1600
+  language: en
+
+engines:
+  - name: docling
+    enabled: true
+    model_type: runnable_ocr
+  - name: paddleocr_vl
+    enabled: false
+    model_type: runnable_ocr
+    pipeline_version: v1.6
+  - name: paddleocr
+    enabled: false
+    model_type: runnable_ocr
+  - name: surya
+    enabled: false
+    model_type: runnable_ocr
+  - name: noop
+    enabled: false
+    model_type: runnable_ocr
+  - name: omnidocbench
+    enabled: false
+    model_type: non_ocr_reference
+    url: https://github.com/opendatalab/OmniDocBench
+  - name: protonx_legal_tc
+    enabled: false
+    model_type: non_ocr_reference
+    url: https://huggingface.co/protonx-models/protonx-legal-tc
