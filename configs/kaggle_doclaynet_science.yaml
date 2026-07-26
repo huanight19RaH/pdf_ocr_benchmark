@@ -22,6 +22,10 @@ engines:
   - name: paddleocr
     enabled: false
     model_type: runnable_ocr
+  - name: paddleocr_ft
+    enabled: false
+    model_type: runnable_ocr
+    rec_model_dir: /kaggle/working/ocr_finetune_outputs/paddleocr/inference
   - name: surya
     enabled: false
     model_type: runnable_ocr

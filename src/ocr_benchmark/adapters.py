@@ -104,10 +104,14 @@ class PaddleOCREngine(BaseEngine):
         from paddleocr import PaddleOCR
 
         lang = self.config.get("language", "en")
+        kwargs = {}
+        rec_model_dir = self.config.get("rec_model_dir")
+        if rec_model_dir:
+            kwargs["rec_model_dir"] = rec_model_dir
         try:
-            self.ocr = PaddleOCR(use_angle_cls=True, lang=lang)
+            self.ocr = PaddleOCR(use_angle_cls=True, lang=lang, **kwargs)
         except TypeError:
-            self.ocr = PaddleOCR(lang=lang)
+            self.ocr = PaddleOCR(lang=lang, **kwargs)
 
     def predict(self, image_path: Path) -> EngineResult:
         if hasattr(self.ocr, "ocr"):
@@ -191,6 +195,7 @@ ENGINE_REGISTRY = {
     "docling": DoclingEngine,
     "paddleocr_vl": PaddleOCRVLEngine,
     "paddleocr": PaddleOCREngine,
+    "paddleocr_ft": PaddleOCREngine,
     "surya": SuryaEngine,
     "noop": NoopEngine,
     "omnidocbench": ReferenceOnlyEngine,

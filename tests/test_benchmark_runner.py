@@ -4,6 +4,7 @@ import pandas as pd
 import yaml
 from PIL import Image
 
+from ocr_benchmark import dataset
 from ocr_benchmark import benchmark
 
 
@@ -48,7 +49,7 @@ def test_benchmark_runner_writes_required_artifacts(tmp_path, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr(benchmark, "_load_dataset", fake_load_dataset)
+    monkeypatch.setattr(dataset, "_load_dataset", fake_load_dataset)
     monkeypatch.setattr(
         sys,
         "argv",
