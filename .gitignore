@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .ipynb_checkpoints/
 .kaggle_tokens/*/kaggle.json
+.kaggle_tokens/*/access_token
 configs/kaggle_accounts.yaml
 outputs/
 ocr_benchmark_outputs/

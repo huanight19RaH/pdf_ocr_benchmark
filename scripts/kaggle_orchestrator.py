@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -146,8 +147,16 @@ def wait_for_jobs(config, job_dirs, poll_seconds, max_wait_minutes, wait):
 
 def run_kaggle(job, args, check=True):
     env = os.environ.copy()
-    env["KAGGLE_CONFIG_DIR"] = str(Path(job["token_dir"]).expanduser().resolve())
-    return subprocess.run(["kaggle", *args], check=check, env=env, capture_output=True, text=True)
+    token_dir = Path(job["token_dir"]).expanduser().resolve()
+    env["KAGGLE_CONFIG_DIR"] = str(token_dir)
+    access_token_file = token_dir / "access_token"
+    legacy_token_file = token_dir / "kaggle.json"
+    if access_token_file.exists():
+        env["KAGGLE_API_TOKEN"] = access_token_file.read_text(encoding="utf-8").strip()
+    elif legacy_token_file.exists():
+        data = json.loads(legacy_token_file.read_text(encoding="utf-8"))
+        env["KAGGLE_API_TOKEN"] = data["key"]
+    return subprocess.run([sys.executable, "-m", "kaggle", *args], check=check, env=env, capture_output=True, text=True)
 
 
 def kernel_id(job):
@@ -160,4 +169,3 @@ def job_slug(name):
 
 if __name__ == "__main__":
     main()
-
