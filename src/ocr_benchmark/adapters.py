@@ -78,7 +78,10 @@ class PaddleOCRVLEngine(BaseEngine):
         from paddleocr import PaddleOCRVL
 
         version = self.config.get("pipeline_version", "v1.6")
-        self.pipeline = PaddleOCRVL(pipeline_version=version)
+        try:
+            self.pipeline = PaddleOCRVL(pipeline_version=version)
+        except TypeError:
+            self.pipeline = PaddleOCRVL()
 
     def predict(self, image_path: Path) -> EngineResult:
         output = self.pipeline.predict(str(image_path))
@@ -108,10 +111,19 @@ class PaddleOCREngine(BaseEngine):
         rec_model_dir = self.config.get("rec_model_dir")
         if rec_model_dir:
             kwargs["rec_model_dir"] = rec_model_dir
-        try:
-            self.ocr = PaddleOCR(use_angle_cls=True, lang=lang, **kwargs)
-        except TypeError:
-            self.ocr = PaddleOCR(lang=lang, **kwargs)
+        init_attempts = [
+            {"use_angle_cls": True, "lang": lang, **kwargs},
+            {"lang": lang, **kwargs},
+            kwargs,
+        ]
+        last_error = None
+        for init_kwargs in init_attempts:
+            try:
+                self.ocr = PaddleOCR(**init_kwargs)
+                return
+            except TypeError as exc:
+                last_error = exc
+        raise last_error
 
     def predict(self, image_path: Path) -> EngineResult:
         if hasattr(self.ocr, "ocr"):
