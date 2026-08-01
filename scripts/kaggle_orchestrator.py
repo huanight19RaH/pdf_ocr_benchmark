@@ -31,14 +31,20 @@ def main():
         return
     if args.action in {"push", "all"}:
         for job, job_dir in job_dirs:
-            run_kaggle(job, ["kernels", "push", "-p", str(job_dir)])
+            result = run_kaggle(job, ["kernels", "push", "-p", str(job_dir)], check=False)
+            print(f"\n[{job['name']}: push {kernel_id(job)}]\n{result.stdout}{result.stderr}", flush=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"Push failed for {job['name']} ({kernel_id(job)})")
     if args.action in {"status", "all"}:
         wait_for_jobs(config, job_dirs, args.poll_seconds, args.max_wait_minutes, wait=args.action == "all")
     if args.action in {"output", "all"}:
         for job, job_dir in job_dirs:
             out_dir = work_dir / "outputs" / job["name"]
+            if out_dir.exists():
+                shutil.rmtree(out_dir)
             out_dir.mkdir(parents=True, exist_ok=True)
-            run_kaggle(job, ["kernels", "output", kernel_id(job), "-p", str(out_dir)])
+            result = run_kaggle(job, ["kernels", "output", kernel_id(job), "-p", str(out_dir)], check=False)
+            print(f"\n[{job['name']}: output {kernel_id(job)}]\n{result.stdout}{result.stderr}", flush=True)
 
 
 def prepare_jobs(config, work_dir: Path):
@@ -53,7 +59,7 @@ def prepare_jobs(config, work_dir: Path):
         code_file = f"{slug}.py"
         metadata = {
             "id": f"{job['username']}/{slug}",
-            "title": f"OCR Benchmark {job['name']}",
+            "title": slug,
             "code_file": code_file,
             "language": "python",
             "kernel_type": "script",
@@ -80,49 +86,82 @@ def render_job_script(config, job):
     install_lines = "\n".join(
         f"run(['python', '-m', 'pip', 'install', '-q', '-r', '{req}'])" for req in install_files
     )
+    slug = job_slug(job["name"])
     return f"""import os
 import shutil
 import subprocess
 import sys
+import traceback
 from pathlib import Path
+
+LOG_PATH = Path('/kaggle/working/job_debug_{slug}.log')
+RESULT_DIR = Path('/kaggle/working/results_{slug}')
+PREFETCH_DIR = Path('/kaggle/working/prefetch_{slug}')
 
 
 def run(cmd):
-    print('+', ' '.join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    line = '+ ' + ' '.join(cmd)
+    print(line, flush=True)
+    with LOG_PATH.open('a', encoding='utf-8') as f:
+        f.write(line + '\\n')
+        proc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f'Command failed with code {{proc.returncode}}: {{line}}')
 
 
-os.chdir('/kaggle/working')
-repo_dir = Path('/kaggle/working/ocr_benchmark')
-if repo_dir.exists():
-    shutil.rmtree(repo_dir)
-run(['git', 'clone', '--depth', '1', '{repo_url}', str(repo_dir)])
-os.chdir(repo_dir)
-sys.path.insert(0, str(repo_dir / 'src'))
+def write_log(message):
+    print(message, flush=True)
+    with LOG_PATH.open('a', encoding='utf-8') as f:
+        f.write(message + '\\n')
 
-run(['python', '-m', 'pip', 'install', '-q', '-r', 'requirements.txt'])
-{install_lines}
 
-run([
-    'python', '-m', 'ocr_benchmark.prefetch_models',
-    '--engines', *'{engines}'.split(),
-    '--output-dir', '/kaggle/working/prefetch_{job_slug(job["name"])}',
-])
+try:
+    os.chdir('/kaggle/working')
+    repo_dir = Path('/kaggle/working/ocr_benchmark')
+    if repo_dir.exists():
+        shutil.rmtree(repo_dir)
+    run(['git', 'clone', '--depth', '1', '--filter=blob:none', '{repo_url}', str(repo_dir)])
+    shutil.rmtree(repo_dir / '.git', ignore_errors=True)
+    os.chdir(repo_dir)
+    sys.path.insert(0, str(repo_dir / 'src'))
 
-run([
-    'python', '-m', 'ocr_benchmark.benchmark',
-    '--config', 'configs/kaggle_doclaynet_science.yaml',
-    '--engines', *'{engines}'.split(),
-    '--limit', '{limit}',
-    '--output-dir', '/kaggle/working/results_{job_slug(job["name"])}',
-])
+    run(['python', '-m', 'pip', 'install', '-q', '-r', 'requirements.txt'])
+{indent_lines(install_lines, 4)}
 
-run([
-    'bash', '-lc',
-    'cd /kaggle/working && zip -qr results_{job_slug(job["name"])}.zip '
-    'results_{job_slug(job["name"])} prefetch_{job_slug(job["name"])}'
-])
+    run([
+        'python', '-m', 'ocr_benchmark.prefetch_models',
+        '--engines', *'{engines}'.split(),
+        '--output-dir', str(PREFETCH_DIR),
+    ])
+
+    run([
+        'python', '-m', 'ocr_benchmark.benchmark',
+        '--config', 'configs/kaggle_doclaynet_science.yaml',
+        '--engines', *'{engines}'.split(),
+        '--limit', '{limit}',
+        '--output-dir', str(RESULT_DIR),
+    ])
+except Exception:
+    write_log('FAILED WITH TRACEBACK:')
+    write_log(traceback.format_exc())
+    raise
+finally:
+    os.chdir('/kaggle/working')
+    if Path('/kaggle/working/ocr_benchmark').exists():
+        shutil.rmtree('/kaggle/working/ocr_benchmark', ignore_errors=True)
+    run([
+        'bash', '-lc',
+        'cd /kaggle/working && zip -qr results_{slug}.zip '
+        'results_{slug} prefetch_{slug} job_debug_{slug}.log || true'
+    ])
 """
+
+
+def indent_lines(text, spaces):
+    if not text:
+        return ""
+    prefix = " " * spaces
+    return "\n".join(prefix + line if line.strip() else line for line in text.splitlines())
 
 
 def wait_for_jobs(config, job_dirs, poll_seconds, max_wait_minutes, wait):
