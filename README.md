@@ -114,6 +114,47 @@ All-in-one shell wrapper:
 LIMIT=20 EPOCHS=10 bash scripts/run_kaggle_all.sh
 ```
 
+## Local Kaggle API Orchestration
+
+You can submit separate Kaggle jobs from your local machine with Kaggle's official CLI. The CLI supports kernel upload/run/status/output, and `kernel-metadata.json` supports `enable_gpu`, `enable_internet`, and `machine_shape`.
+
+Install locally:
+
+```bash
+python -m pip install kaggle pyyaml
+```
+
+For each Kaggle account, create its own token folder containing `kaggle.json`, for example:
+
+```text
+C:/Users/YOU/.kaggle/account1/kaggle.json
+C:/Users/YOU/.kaggle/account2/kaggle.json
+C:/Users/YOU/.kaggle/account3/kaggle.json
+```
+
+Copy and edit the example config:
+
+```bash
+copy configs\kaggle_accounts.example.yaml configs\kaggle_accounts.yaml
+```
+
+Then prepare, submit, monitor, and download:
+
+```bash
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --action prepare
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --action push
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --action status
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --action output
+```
+
+Or run all steps with polling:
+
+```bash
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --action all
+```
+
+Use this only with Kaggle accounts and quotas you are allowed to use. If a model still fails, inspect `kaggle_remote_jobs/outputs/<job>/prefetch_status.jsonl` and `errors.csv`.
+
 ## Install Options
 
 ```bash

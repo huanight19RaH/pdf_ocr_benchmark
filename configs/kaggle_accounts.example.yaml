@@ -1,0 +1,29 @@
+repo_url: https://github.com/huanight19RaH/pdf_ocr_benchmark.git
+limit: 20
+machine_shape: NvidiaTeslaT4
+jobs:
+  - name: docling
+    username: your_kaggle_username_1
+    token_dir: C:/Users/YOU/.kaggle/account1
+    engines: [docling]
+    install_files:
+      - requirements-kaggle-docling.txt
+  - name: paddleocr
+    username: your_kaggle_username_2
+    token_dir: C:/Users/YOU/.kaggle/account2
+    engines: [paddleocr]
+    install_files:
+      - requirements-kaggle-paddleocr-gpu.txt
+  - name: surya
+    username: your_kaggle_username_3
+    token_dir: C:/Users/YOU/.kaggle/account3
+    engines: [surya]
+    install_files:
+      - requirements-kaggle-surya.txt
+  - name: paddleocr-vl
+    username: your_kaggle_username_3
+    token_dir: C:/Users/YOU/.kaggle/account3
+    engines: [paddleocr_vl]
+    install_files:
+      - requirements-kaggle-paddleocr-vl.txt
+

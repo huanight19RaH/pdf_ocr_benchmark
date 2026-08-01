@@ -2,6 +2,10 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .ipynb_checkpoints/
+.kaggle_tokens/*/kaggle.json
+configs/kaggle_accounts.yaml
 outputs/
 ocr_benchmark_outputs/
+kaggle_remote_jobs/
+tmp_kaggle_remote_jobs/
 *.zip
