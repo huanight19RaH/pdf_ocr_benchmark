@@ -1,0 +1,34 @@
+projects:
+  - name: pdf_ocr_benchmark
+    repo_url: https://github.com/huanight19RaH/pdf_ocr_benchmark.git
+    local_path: D:/THStudy/UniversityStudy/extra_classes/ocr_benchmark
+    config_path: configs/kaggle_doclaynet_science.yaml
+    limit: 20
+    machine_shape: NvidiaTeslaT4
+    commands:
+      setup:
+        - python -m pip install -q -r requirements.txt
+      run:
+        - python -m ocr_benchmark.prefetch_models --engines {{ engines }} --output-dir {{ prefetch_dir }}
+        - python -m ocr_benchmark.benchmark --config {{ config_path }} --engines {{ engines }} --limit {{ limit }} --output-dir {{ result_dir }}
+    jobs:
+      - name: docling
+        account_id: account1
+        engines: [docling]
+        install_files:
+          - requirements-kaggle-docling.txt
+      - name: paddleocr
+        account_id: account2
+        engines: [paddleocr]
+        install_files:
+          - requirements-kaggle-paddleocr.txt
+      - name: surya
+        account_id: account3
+        engines: [surya]
+        install_files:
+          - requirements-kaggle-surya.txt
+      - name: paddleocr-vl
+        account_id: account3
+        engines: [paddleocr_vl]
+        install_files:
+          - requirements-kaggle-paddleocr-vl.txt

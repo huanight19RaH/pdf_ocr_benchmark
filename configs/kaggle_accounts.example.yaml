@@ -13,7 +13,7 @@ jobs:
     token_dir: C:/Users/YOU/.kaggle/account2
     engines: [paddleocr]
     install_files:
-      - requirements-kaggle-paddleocr-gpu.txt
+      - requirements-kaggle-paddleocr.txt
   - name: surya
     username: your_kaggle_username_3
     token_dir: C:/Users/YOU/.kaggle/account3
@@ -26,4 +26,3 @@ jobs:
     engines: [paddleocr_vl]
     install_files:
       - requirements-kaggle-paddleocr-vl.txt
-

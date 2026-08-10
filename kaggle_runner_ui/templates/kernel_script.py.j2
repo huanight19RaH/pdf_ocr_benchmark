@@ -1,0 +1,64 @@
+import os
+import shutil
+import subprocess
+import sys
+import traceback
+from pathlib import Path
+
+SLUG = "{{ slug }}"
+REPO_URL = "{{ repo_url }}"
+LOG_PATH = Path(f"/kaggle/working/job_debug_{SLUG}.log")
+REPO_DIR = Path("/kaggle/working/project_code")
+RESULT_DIR = Path(f"/kaggle/working/results_{SLUG}")
+PREFETCH_DIR = Path(f"/kaggle/working/prefetch_{SLUG}")
+
+
+def write_log(message):
+    print(message, flush=True)
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        f.write(message + "\n")
+
+
+def run(command):
+    line = "+ " + " ".join(command)
+    write_log(line)
+    with LOG_PATH.open("a", encoding="utf-8") as f:
+        proc = subprocess.run(command, stdout=f, stderr=subprocess.STDOUT, text=True)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed with code {proc.returncode}: {line}")
+
+
+try:
+    os.chdir("/kaggle/working")
+    if REPO_DIR.exists():
+        shutil.rmtree(REPO_DIR)
+    run(["git", "clone", "--depth", "1", "--filter=blob:none", REPO_URL, str(REPO_DIR)])
+    shutil.rmtree(REPO_DIR / ".git", ignore_errors=True)
+    os.chdir(REPO_DIR)
+    sys.path.insert(0, str(REPO_DIR / "src"))
+    os.environ["PYTHONPATH"] = str(REPO_DIR / "src") + os.pathsep + os.environ.get("PYTHONPATH", "")
+    write_log("PYTHONPATH=" + os.environ["PYTHONPATH"])
+
+{% for command in setup_commands %}
+    run({{ command }})
+{% endfor %}
+{% for command in install_commands %}
+    run({{ command }})
+{% endfor %}
+{% for command in run_commands %}
+    run({{ command }})
+{% endfor %}
+except Exception:
+    write_log("FAILED WITH TRACEBACK:")
+    write_log(traceback.format_exc())
+    raise
+finally:
+    os.chdir("/kaggle/working")
+    if REPO_DIR.exists():
+        shutil.rmtree(REPO_DIR, ignore_errors=True)
+    run([
+        "bash",
+        "-lc",
+        f"cd /kaggle/working && zip -qr results_{SLUG}.zip results_{SLUG} prefetch_{SLUG} job_debug_{SLUG}.log || true",
+    ])
+

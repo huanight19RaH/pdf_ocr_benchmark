@@ -152,6 +152,8 @@ class SuryaEngine(BaseEngine):
             out_dir = Path(tmp)
             langs = self.config.get("language", "en")
             commands = [
+                [self.command, str(image_path), "--output_dir", str(out_dir), "--images"],
+                [self.command, str(image_path), "--output_dir", str(out_dir)],
                 [self.command, str(image_path), "--output_dir", str(out_dir), "--langs", langs],
                 [self.command, "ocr", str(image_path), "--output_dir", str(out_dir), "--langs", langs],
             ]
