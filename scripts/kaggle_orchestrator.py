@@ -124,6 +124,8 @@ try:
     shutil.rmtree(repo_dir / '.git', ignore_errors=True)
     os.chdir(repo_dir)
     sys.path.insert(0, str(repo_dir / 'src'))
+    os.environ['PYTHONPATH'] = str(repo_dir / 'src') + os.pathsep + os.environ.get('PYTHONPATH', '')
+    write_log('PYTHONPATH=' + os.environ['PYTHONPATH'])
 
     run(['python', '-m', 'pip', 'install', '-q', '-r', 'requirements.txt'])
 {indent_lines(install_lines, 4)}
