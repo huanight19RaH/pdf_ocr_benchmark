@@ -8,6 +8,8 @@ from PIL import Image, ImageDraw
 
 from .adapters import build_engine
 
+LOAD_ONLY_ENGINES = {"paddleocr_vl"}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Prefetch and smoke-test OCR model downloads.")
@@ -30,6 +32,10 @@ def main():
             if engine == "docling":
                 run_optional(["docling-tools", "models", "download"])
             predictor = build_engine(engine, config={"language": "en"})
+            if engine in LOAD_ONLY_ENGINES:
+                rows.append({"engine": engine, "status": "loaded", "chars": 0, "error": "load-only prefetch"})
+                print(f"{engine}: loaded; skipped smoke inference for heavy engine", flush=True)
+                continue
             result = predictor.predict(image_path)
             rows.append({"engine": engine, "status": "ok", "chars": len(result.text), "error": ""})
             print(f"{engine}: ok, chars={len(result.text)}", flush=True)

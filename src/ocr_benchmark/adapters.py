@@ -1,4 +1,5 @@
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -151,6 +152,8 @@ class SuryaEngine(BaseEngine):
 
     def __init__(self, config=None):
         super().__init__(config)
+        os.environ.setdefault("RECOGNITION_BATCH_SIZE", str(self.config.get("recognition_batch_size", 128)))
+        os.environ.setdefault("DETECTOR_BATCH_SIZE", str(self.config.get("detector_batch_size", 24)))
         self.python_engine = self._try_python_engine()
         if self.python_engine is not None:
             return
@@ -197,6 +200,19 @@ class SuryaEngine(BaseEngine):
 
     def _try_python_engine(self):
         try:
+            from surya.detection import DetectionPredictor
+            from surya.foundation import FoundationPredictor
+            from surya.recognition import RecognitionPredictor
+
+            foundation = FoundationPredictor()
+            return {
+                "api": "surya_v1",
+                "recognition_predictor": RecognitionPredictor(foundation),
+                "detection_predictor": DetectionPredictor(),
+            }
+        except Exception:
+            pass
+        try:
             from surya.ocr import run_ocr
             from surya.model.detection.model import load_model as load_det_model
             from surya.model.detection.processor import load_processor as load_det_processor
@@ -204,6 +220,7 @@ class SuryaEngine(BaseEngine):
             from surya.model.recognition.processor import load_processor as load_rec_processor
 
             return {
+                "api": "surya_legacy_run_ocr",
                 "run_ocr": run_ocr,
                 "det_model": load_det_model(),
                 "det_processor": load_det_processor(),
@@ -217,6 +234,12 @@ class SuryaEngine(BaseEngine):
         from PIL import Image
 
         image = Image.open(image_path).convert("RGB")
+        if self.python_engine.get("api") == "surya_v1":
+            result = self.python_engine["recognition_predictor"](
+                [image],
+                det_predictor=self.python_engine["detection_predictor"],
+            )
+            return EngineResult(text="\n".join(_collect_strings(result)), raw={"items": _safe_repr(result)[:2000]})
         lang = self.config.get("language", "en")
         langs = [lang] if isinstance(lang, str) else lang
         result = self.python_engine["run_ocr"](
