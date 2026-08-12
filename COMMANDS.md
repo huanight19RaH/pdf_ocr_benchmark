@@ -169,17 +169,24 @@ https://www.kaggle.com/code/OWNER/KERNEL-SLUG
 ## 10. Merge Ket Qua Benchmark
 
 ```powershell
-python scripts\merge_kaggle_outputs.py `
-  --input-dir outputs `
+python scripts\build_latest_report.py `
+  --input-dir kaggle_remote_jobs\outputs `
   --output-dir outputs\final_benchmark_report_latest
+```
+
+Hoac dung file bat:
+
+```powershell
+.\scripts\windows\07_build_latest_report.bat
 ```
 
 File can xem:
 
 ```text
-outputs/final_benchmark_report_latest/summary_all.csv
-outputs/final_benchmark_report_latest/summary_all.xlsx
-outputs/final_benchmark_report_latest/errors_all.csv
+outputs/final_benchmark_report_latest/combined_summary.csv
+outputs/final_benchmark_report_latest/latest_benchmark_report.xlsx
+outputs/final_benchmark_report_latest/combined_errors.csv
+outputs/final_benchmark_report_latest/LATEST_BENCHMARK_REPORT.md
 ```
 
 ## 11. Commit Va Push Len GitHub
