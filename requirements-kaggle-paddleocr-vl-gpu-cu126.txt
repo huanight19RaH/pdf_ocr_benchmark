@@ -1,0 +1,6 @@
+# Optional PaddleOCR-VL GPU install for Kaggle images that are compatible with CUDA 12.6.
+# Use this only if the CPU default is too slow and the job does not hit
+# torch/libtorch_cuda.so NCCL symbol errors.
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
+paddlepaddle-gpu==3.2.1; platform_system == "Linux"
+paddleocr[doc-parser]>=3.6.0

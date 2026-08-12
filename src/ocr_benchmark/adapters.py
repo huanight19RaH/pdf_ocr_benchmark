@@ -126,10 +126,23 @@ class PaddleOCREngine(BaseEngine):
         raise last_error
 
     def predict(self, image_path: Path) -> EngineResult:
+        errors = []
+        result = None
         if hasattr(self.ocr, "ocr"):
-            result = self.ocr.ocr(str(image_path), cls=True)
-        else:
-            result = self.ocr.predict(str(image_path))
+            for kwargs in ({"cls": True}, {}):
+                try:
+                    result = self.ocr.ocr(str(image_path), **kwargs)
+                    break
+                except TypeError as exc:
+                    errors.append(f"ocr({kwargs}): {exc}")
+        if result is None and hasattr(self.ocr, "predict"):
+            try:
+                result = self.ocr.predict(str(image_path))
+            except TypeError as exc:
+                errors.append(f"predict(): {exc}")
+        if result is None:
+            detail = "; ".join(errors) if errors else "No compatible PaddleOCR prediction method found."
+            raise RuntimeError(f"PaddleOCR prediction failed: {detail}")
         return EngineResult(text="\n".join(_collect_strings(result)), raw={"items": _safe_repr(result)[:2000]})
 
 
@@ -150,25 +163,37 @@ class SuryaEngine(BaseEngine):
             return self._predict_python(image_path)
         with tempfile.TemporaryDirectory() as tmp:
             out_dir = Path(tmp)
+            input_dir = out_dir / "input"
+            input_dir.mkdir(parents=True, exist_ok=True)
+            input_image = input_dir / image_path.name
+            shutil.copy2(image_path, input_image)
             langs = self.config.get("language", "en")
             commands = [
+                [self.command, str(input_dir), "--output_dir", str(out_dir), "--images"],
                 [self.command, str(image_path), "--output_dir", str(out_dir), "--images"],
+                [self.command, str(input_dir), "--output_dir", str(out_dir)],
                 [self.command, str(image_path), "--output_dir", str(out_dir)],
                 [self.command, str(image_path), "--output_dir", str(out_dir), "--langs", langs],
                 [self.command, "ocr", str(image_path), "--output_dir", str(out_dir), "--langs", langs],
             ]
-            last_error = None
+            attempt_errors = []
             for cmd in commands:
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
                 if proc.returncode == 0:
                     text = []
                     for path in out_dir.rglob("*.json"):
                         text.extend(_collect_strings(json.loads(path.read_text(encoding="utf-8", errors="ignore"))))
+                    for path in out_dir.rglob("*.md"):
+                        text.append(path.read_text(encoding="utf-8", errors="ignore"))
                     for path in out_dir.rglob("*.txt"):
                         text.append(path.read_text(encoding="utf-8", errors="ignore"))
-                    return EngineResult(text="\n".join(text), raw={"stdout": proc.stdout[-2000:]})
-                last_error = proc.stderr[-2000:] or proc.stdout[-2000:]
-            raise RuntimeError(f"Surya command failed: {last_error}")
+                    return EngineResult(
+                        text="\n".join(text),
+                        raw={"stdout": proc.stdout[-2000:], "command": " ".join(cmd)},
+                    )
+                message = proc.stderr[-2000:] or proc.stdout[-2000:] or f"exit code {proc.returncode}"
+                attempt_errors.append(f"$ {' '.join(cmd)}\n{message}")
+            raise RuntimeError("Surya command failed after all CLI variants:\n\n" + "\n\n---\n\n".join(attempt_errors))
 
     def _try_python_engine(self):
         try:

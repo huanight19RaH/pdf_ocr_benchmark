@@ -1,5 +1,8 @@
-# PaddleOCR-VL is sensitive to the Kaggle CUDA image.
-# If this GPU wheel fails, switch the index URL to the CUDA version shown in the Kaggle runtime.
---extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cu126/
-paddlepaddle-gpu==3.2.1; platform_system == "Linux"
+# Default to the CPU Paddle wheel on Kaggle.
+# The GPU Paddle cu126 wheel can replace Kaggle's CUDA/NCCL libraries and break
+# the preinstalled PyTorch runtime with errors such as "undefined symbol:
+# ncclCommShrink". PaddleOCR-VL is slower this way, but it is much more likely
+# to load cleanly on a fresh Kaggle T4/P100 session.
+--extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
+paddlepaddle==3.2.1; platform_system == "Linux"
 paddleocr[doc-parser]>=3.6.0
