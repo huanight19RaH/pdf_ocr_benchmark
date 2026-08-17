@@ -1,6 +1,6 @@
 # OCR Benchmark Command Cheatsheet
 
-File nay gom cac lenh hay dung de clone, chay benchmark, submit Kaggle jobs, tai ket qua va commit code.
+File nay gom cac lenh hay dung de clone, chay benchmark, finetune model, submit Kaggle jobs, tai ket qua va commit code.
 
 ## 1. Clone Repo
 
@@ -87,7 +87,38 @@ python -m ocr_benchmark.benchmark `
   --output-dir outputs/local_paddleocr_vl
 ```
 
-## 6. Chay Portable Kaggle Runner UI
+## 6. Chay Finetuning & Benchmark So Sanh (PaddleOCR Pretrained vs. Finetuned)
+
+### 6.1 Chay Finetune Local:
+
+```powershell
+# Chuan bi dataset va train 10 epochs tren DocLayNet scientific_articles:
+python -m ocr_benchmark.finetune `
+  --config configs/kaggle_doclaynet_science.yaml `
+  --models paddleocr `
+  --limit 20 `
+  --epochs 10 `
+  --output-dir outputs/local_finetune `
+  --execute
+
+# Benchmark so sanh Pretrained baseline vs Finetuned model:
+python -m ocr_benchmark.benchmark `
+  --config configs/kaggle_doclaynet_science.yaml `
+  --engines paddleocr paddleocr_ft `
+  --limit 20 `
+  --output-dir outputs/local_finetune_eval
+```
+
+### 6.2 Chay Finetune tren Kaggle qua Orchestrator:
+
+```powershell
+# Chay rieng job paddleocr-ft:
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --job paddleocr-ft --action push
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --job paddleocr-ft --action status
+python scripts/kaggle_orchestrator.py --config configs/kaggle_accounts.yaml --job paddleocr-ft --action output
+```
+
+## 7. Chay Portable Kaggle Runner UI
 
 ```powershell
 cd kaggle_runner_ui
@@ -101,7 +132,7 @@ Mo browser theo URL Streamlit hien ra, thuong la:
 http://localhost:8501
 ```
 
-## 7. Chuan Bi Config Kaggle Accounts
+## 8. Chuan Bi Config Kaggle Accounts
 
 Neu chua co file config rieng:
 
@@ -122,6 +153,16 @@ jobs:
     engines: [docling]
     install_files:
       - requirements-kaggle-docling.txt
+
+  - name: paddleocr-ft
+    username: your_kaggle_username_2
+    token_dir: C:/Users/YOU/.kaggle/account2
+    job_type: finetune
+    finetune_model: paddleocr
+    epochs: 10
+    engines: [paddleocr, paddleocr_ft]
+    install_files:
+      - requirements-kaggle-paddleocr.txt
 ```
 
 Moi `token_dir` can co file:
@@ -130,7 +171,7 @@ Moi `token_dir` can co file:
 kaggle.json
 ```
 
-## 8. Submit Jobs Len Kaggle Bang Script Windows
+## 9. Submit Jobs Len Kaggle Bang Script Windows
 
 Chay tung lenh rieng trong PowerShell, khong copy ca dau prompt `PS ...>`:
 
@@ -139,34 +180,9 @@ Chay tung lenh rieng trong PowerShell, khong copy ca dau prompt `PS ...>`:
 .\scripts\windows\02_push_jobs.bat
 .\scripts\windows\03_check_status.bat
 .\scripts\windows\04_download_outputs.bat
-.\scripts\windows\05_merge_results.bat
 ```
 
-Neu bi loi current directory da bi xoa tren Kaggle/local shell, chuyen ve folder ton tai truoc:
-
-```powershell
-cd D:\THStudy\UniversityStudy\extra_classes\ocr_benchmark
-```
-
-## 9. Check Trang Thai Kaggle Job Thu Cong
-
-```powershell
-python -m kaggle kernels status OWNER/KERNEL-SLUG
-```
-
-Vi du:
-
-```powershell
-python -m kaggle kernels status thung192/ocr-docling
-```
-
-Dung slug trong URL notebook Kaggle:
-
-```text
-https://www.kaggle.com/code/OWNER/KERNEL-SLUG
-```
-
-## 10. Merge Ket Qua Benchmark
+## 10. Merge Ket Qua Benchmark & Tao Bao Cao
 
 ```powershell
 python scripts\build_latest_report.py `
@@ -186,79 +202,16 @@ File can xem:
 outputs/final_benchmark_report_latest/combined_summary.csv
 outputs/final_benchmark_report_latest/latest_benchmark_report.xlsx
 outputs/final_benchmark_report_latest/combined_errors.csv
+outputs/final_benchmark_report_latest/combined_finetune_status.csv
 outputs/final_benchmark_report_latest/LATEST_BENCHMARK_REPORT.md
 ```
 
 ## 11. Commit Va Push Len GitHub
 
-Xem file thay doi:
-
 ```powershell
 git status --short
 git diff
-```
-
-Commit cac file code can push:
-
-```powershell
 git add .
-git commit -m "fix: support PaddleOCR Surya and PaddleOCR-VL Kaggle runtimes"
+git commit -m "feat: complete 10-epoch DocLayNet finetuning pipeline and reporting"
 git push
-```
-
-Neu chi muon commit file lenh nay:
-
-```powershell
-git add COMMANDS.md
-git commit -m "docs: add command cheatsheet"
-git push
-```
-
-## 12. Kaggle Notebook Clone Va Chay Truc Tiep
-
-Cell clone:
-
-```python
-import os
-
-REPO_DIR = "/kaggle/working/ocr_benchmark"
-os.chdir("/kaggle/working")
-
-if not os.path.exists(REPO_DIR):
-    !git clone --depth 1 https://github.com/huanight19RaH/pdf_ocr_benchmark.git {REPO_DIR}
-
-os.chdir(REPO_DIR)
-```
-
-Cell install base:
-
-```python
-!python -m pip install -q -r requirements.txt
-```
-
-Cell smoke test:
-
-```python
-!PYTHONPATH=/kaggle/working/ocr_benchmark/src python -m ocr_benchmark.benchmark \
-  --config configs/kaggle_doclaynet_science.yaml \
-  --engines noop \
-  --limit 3 \
-  --output-dir /kaggle/working/ocr_benchmark_outputs/noop
-```
-
-Cell chay mot engine:
-
-```python
-!python -m pip install -q -r requirements-kaggle-docling.txt
-!PYTHONPATH=/kaggle/working/ocr_benchmark/src python -m ocr_benchmark.benchmark \
-  --config configs/kaggle_doclaynet_science.yaml \
-  --engines docling \
-  --limit 20 \
-  --output-dir /kaggle/working/ocr_benchmark_outputs/docling
-```
-
-Cell zip output:
-
-```python
-!cd /kaggle/working && zip -r ocr_benchmark_outputs.zip ocr_benchmark_outputs
 ```

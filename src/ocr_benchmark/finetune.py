@@ -380,11 +380,16 @@ def resolve_checkpoint_prefix(train_output_dir: Path) -> Path:
     latest_ckpt = train_output_dir / "latest"
     if (train_output_dir / "latest.pdparams").exists():
         return latest_ckpt
-    pdparams_files = sorted(train_output_dir.glob("*.pdparams"), key=lambda p: p.stat().st_mtime, reverse=True)
+    pdparams_files = sorted(train_output_dir.glob("**/*.pdparams"), key=lambda p: p.stat().st_mtime, reverse=True)
     if pdparams_files:
         stem = pdparams_files[0].stem
-        return train_output_dir / stem
-    return latest_ckpt
+        return pdparams_files[0].parent / stem
+    return best_ckpt
+
+
+# Alias for backward/forward compatibility
+find_paddleocr_checkpoint = resolve_checkpoint_prefix
+
 
 
 def build_paddleocr_train_command(paddleocr_repo: Path, data_dir: Path, epochs: int, output_dir: Path):
@@ -402,13 +407,16 @@ def build_paddleocr_train_command(paddleocr_repo: Path, data_dir: Path, epochs: 
 
 def build_paddleocr_export_command(paddleocr_repo: Path, data_dir: Path, checkpoint_prefix: Path, inference_dir: Path):
     config_path = data_dir / "rec_doclaynet.yml"
+    prefix_str = Path(checkpoint_prefix).as_posix()
+    if prefix_str.endswith(".pdparams"):
+        prefix_str = prefix_str[:-len(".pdparams")]
     return [
         "python",
         str(paddleocr_repo / "tools" / "export_model.py"),
         "-c",
         str(config_path),
         "-o",
-        f"Global.pretrained_model={checkpoint_prefix.as_posix()}",
+        f"Global.pretrained_model={prefix_str}",
         f"Global.save_inference_dir={inference_dir.as_posix()}",
     ]
 
@@ -429,7 +437,7 @@ else
     if [ -n "$CKPT_FILE" ]; then
         CKPT="${{CKPT_FILE%.pdparams}}"
     else
-        CKPT="$TRAIN_DIR/latest"
+        CKPT="$TRAIN_DIR/best_accuracy"
     fi
 fi
 

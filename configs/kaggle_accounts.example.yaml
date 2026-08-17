@@ -14,6 +14,15 @@ jobs:
     engines: [paddleocr]
     install_files:
       - requirements-kaggle-paddleocr.txt
+  - name: paddleocr-ft
+    username: your_kaggle_username_2
+    token_dir: C:/Users/YOU/.kaggle/account2
+    job_type: finetune
+    finetune_model: paddleocr
+    epochs: 10
+    engines: [paddleocr, paddleocr_ft]
+    install_files:
+      - requirements-kaggle-paddleocr.txt
   - name: surya
     username: your_kaggle_username_3
     token_dir: C:/Users/YOU/.kaggle/account3
