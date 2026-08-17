@@ -134,13 +134,11 @@ def main():
 def detect_use_gpu() -> bool:
     try:
         import paddle
-        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+        if hasattr(paddle, "is_compiled_with_cuda") and paddle.is_compiled_with_cuda():
+            if hasattr(paddle.device, "cuda") and paddle.device.cuda.device_count() > 0:
+                return True
             return True
-    except Exception:
-        pass
-    try:
-        import torch
-        if torch.cuda.is_available():
+        if hasattr(paddle.device, "is_compiled_with_cuda") and paddle.device.is_compiled_with_cuda():
             return True
     except Exception:
         pass
@@ -449,12 +447,12 @@ python "{tools_export.as_posix()}" \\
 """
 
 
-def ensure_paddleocr_repo(paddleocr_repo: Path):
     try:
         import lmdb  # noqa
+        import albumentations  # noqa
     except ImportError:
         import sys
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "lmdb", "pyclipper", "shapely", "visualdl"], check=False)
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "lmdb", "pyclipper", "shapely", "visualdl", "albumentations"], check=False)
 
     if not (paddleocr_repo / "tools" / "train.py").exists():
         if paddleocr_repo.exists():
