@@ -53,20 +53,28 @@ def main():
         if model == "paddleocr":
             try:
                 prepared = prepare_paddleocr_rec_dataset(samples, model_dir, runtime_cfg, epochs=args.epochs)
+                train_output_dir = model_dir / "train_output"
+                inference_dir = model_dir / "inference"
                 command = build_paddleocr_train_command(
                     paddleocr_repo=Path(args.paddleocr_repo),
                     data_dir=prepared["data_dir"],
                     epochs=args.epochs,
-                    output_dir=model_dir / "train_output",
+                    output_dir=train_output_dir,
                 )
                 export_command = build_paddleocr_export_command(
                     paddleocr_repo=Path(args.paddleocr_repo),
                     data_dir=prepared["data_dir"],
-                    checkpoint_prefix=model_dir / "train_output" / "best_accuracy",
-                    inference_dir=model_dir / "inference",
+                    checkpoint_prefix=train_output_dir / "best_accuracy",
+                    inference_dir=inference_dir,
+                )
+                safe_export_script = build_safe_export_shell_script(
+                    paddleocr_repo=Path(args.paddleocr_repo),
+                    data_dir=prepared["data_dir"],
+                    train_output_dir=train_output_dir,
+                    inference_dir=inference_dir,
                 )
                 (model_dir / "train_command.sh").write_text(" ".join(command) + "\n", encoding="utf-8")
-                (model_dir / "export_command.sh").write_text(" ".join(export_command) + "\n", encoding="utf-8")
+                (model_dir / "export_command.sh").write_text(safe_export_script, encoding="utf-8")
                 row = {
                     "model": model,
                     "status": "prepared",
@@ -74,14 +82,21 @@ def main():
                     "train_samples": prepared["train_samples"],
                     "val_samples": prepared["val_samples"],
                     "output_dir": str(model_dir),
-                    "note": "PaddleOCR recognition finetune dataset, train command, and export command prepared.",
+                    "note": "PaddleOCR recognition finetune dataset, train command, and safe export script prepared.",
                 }
                 if args.execute:
                     ensure_paddleocr_repo(Path(args.paddleocr_repo))
                     subprocess.run(command, check=True)
-                    subprocess.run(export_command, check=True)
+                    ckpt_prefix = resolve_checkpoint_prefix(train_output_dir)
+                    actual_export_command = build_paddleocr_export_command(
+                        paddleocr_repo=Path(args.paddleocr_repo),
+                        data_dir=prepared["data_dir"],
+                        checkpoint_prefix=ckpt_prefix,
+                        inference_dir=inference_dir,
+                    )
+                    subprocess.run(actual_export_command, check=True)
                     row["status"] = "trained"
-                    row["note"] = "Training and export commands completed."
+                    row["note"] = f"Training ({args.epochs} epochs) and export completed from checkpoint '{ckpt_prefix.name}'."
                 status_rows.append(row)
             except Exception as exc:
                 status_rows.append(
@@ -116,12 +131,28 @@ def main():
     print(f"\nWrote finetune outputs to: {output_dir}")
 
 
+def detect_use_gpu() -> bool:
+    try:
+        import paddle
+        if paddle.device.is_compiled_with_cuda() and paddle.device.cuda.device_count() > 0:
+            return True
+    except Exception:
+        pass
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def prepare_paddleocr_rec_dataset(samples, output_dir: Path, runtime_cfg, epochs: int):
     data_dir = output_dir / "paddleocr_rec_dataset"
     image_dir = data_dir / "images"
     image_dir.mkdir(parents=True, exist_ok=True)
     records = []
-    max_side = runtime_cfg.get("image_max_side")
+    max_side = runtime_cfg.get("image_max_side") if runtime_cfg else None
 
     for sample in tqdm(samples, desc="prepare-paddleocr-rec"):
         image = sample["image"]
@@ -134,18 +165,20 @@ def prepare_paddleocr_rec_dataset(samples, output_dir: Path, runtime_cfg, epochs
         cell_records = extract_text_cells(sample.get("pdf_cells") or [], image.size)
         if not cell_records:
             # Full-page fallback keeps the finetune job usable when cell boxes are unavailable.
-            cell_records = [((0, 0, image.width, image.height), normalize_text(sample["reference_text"])[:512])]
+            ref_text = normalize_text(sample.get("reference_text", ""))[:512]
+            if ref_text:
+                cell_records = [((0, 0, image.width, image.height), ref_text)]
 
         for idx, (bbox, text) in enumerate(cell_records):
-            text = normalize_text(text)
-            if len(text) < 2:
+            clean_text = text.strip()
+            if not clean_text:
                 continue
             crop = image.crop(bbox)
             if crop.width < 4 or crop.height < 4:
                 continue
             rel_path = Path("images") / f"{sample['sample_id']}_{idx:04d}.png"
             crop.save(data_dir / rel_path)
-            records.append((rel_path.as_posix(), text))
+            records.append((rel_path.as_posix(), clean_text))
 
     if not records:
         raise RuntimeError("No PaddleOCR recognition crops could be created from DocLayNet pdf_cells.")
@@ -156,11 +189,17 @@ def prepare_paddleocr_rec_dataset(samples, output_dir: Path, runtime_cfg, epochs
     write_label_file(data_dir / "train.txt", train_records)
     write_label_file(data_dir / "val.txt", val_records)
     write_dict_file(data_dir / "dict.txt", records)
-    write_paddleocr_config(data_dir / "rec_doclaynet.yml", data_dir, epochs=epochs)
+    use_gpu = runtime_cfg.get("use_gpu") if runtime_cfg else None
+    write_paddleocr_config(data_dir / "rec_doclaynet.yml", data_dir, epochs=epochs, use_gpu=use_gpu)
     return {"data_dir": data_dir, "train_samples": len(train_records), "val_samples": len(val_records)}
 
 
 def extract_text_cells(pdf_cells, image_size):
+    if isinstance(pdf_cells, str):
+        try:
+            pdf_cells = json.loads(pdf_cells)
+        except Exception:
+            pass
     cells = []
     for item in walk_cells(pdf_cells):
         text = item.get("text") or item.get("content") or item.get("value")
@@ -187,8 +226,12 @@ def parse_bbox(bbox, image_size):
     if isinstance(bbox, dict):
         if {"l", "t", "r", "b"}.issubset(bbox):
             coords = [bbox["l"], bbox["t"], bbox["r"], bbox["b"]]
+        elif {"x1", "y1", "x2", "y2"}.issubset(bbox):
+            coords = [bbox["x1"], bbox["y1"], bbox["x2"], bbox["y2"]]
         elif {"x", "y", "w", "h"}.issubset(bbox):
             coords = [bbox["x"], bbox["y"], bbox["x"] + bbox["w"], bbox["y"] + bbox["h"]]
+        elif {"x", "y", "x2", "y2"}.issubset(bbox):
+            coords = [bbox["x"], bbox["y"], bbox["x2"], bbox["y2"]]
         else:
             return None
     elif isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
@@ -222,15 +265,19 @@ def write_dict_file(path: Path, records):
     path.write_text("\n".join(chars) + "\n", encoding="utf-8")
 
 
-def write_paddleocr_config(path: Path, data_dir: Path, epochs: int):
+def write_paddleocr_config(path: Path, data_dir: Path, epochs: int, use_gpu: bool = None):
+    if use_gpu is None:
+        use_gpu = detect_use_gpu()
+    use_gpu_str = "true" if use_gpu else "false"
+    save_model_dir = (data_dir.parent / "train_output").as_posix()
     config = f"""Global:
-  use_gpu: true
+  use_gpu: {use_gpu_str}
   epoch_num: {epochs}
   log_smooth_window: 20
   print_batch_step: 10
-  save_model_dir: ./output/doclaynet_rec
+  save_model_dir: {save_model_dir}
   save_epoch_step: 1
-  eval_batch_step: [0, 200]
+  eval_batch_step: [0, 50]
   cal_metric_during_train: true
   pretrained_model:
   checkpoints:
@@ -298,8 +345,8 @@ Train:
   loader:
     shuffle: true
     batch_size_per_card: 32
-    drop_last: true
-    num_workers: 2
+    drop_last: false
+    num_workers: 0
 
 Eval:
   dataset:
@@ -320,9 +367,24 @@ Eval:
     shuffle: false
     drop_last: false
     batch_size_per_card: 32
-    num_workers: 2
+    num_workers: 0
 """
     path.write_text(config, encoding="utf-8")
+
+
+def resolve_checkpoint_prefix(train_output_dir: Path) -> Path:
+    train_output_dir = Path(train_output_dir)
+    best_ckpt = train_output_dir / "best_accuracy"
+    if (train_output_dir / "best_accuracy.pdparams").exists():
+        return best_ckpt
+    latest_ckpt = train_output_dir / "latest"
+    if (train_output_dir / "latest.pdparams").exists():
+        return latest_ckpt
+    pdparams_files = sorted(train_output_dir.glob("*.pdparams"), key=lambda p: p.stat().st_mtime, reverse=True)
+    if pdparams_files:
+        stem = pdparams_files[0].stem
+        return train_output_dir / stem
+    return latest_ckpt
 
 
 def build_paddleocr_train_command(paddleocr_repo: Path, data_dir: Path, epochs: int, output_dir: Path):
@@ -349,6 +411,34 @@ def build_paddleocr_export_command(paddleocr_repo: Path, data_dir: Path, checkpo
         f"Global.pretrained_model={checkpoint_prefix.as_posix()}",
         f"Global.save_inference_dir={inference_dir.as_posix()}",
     ]
+
+
+def build_safe_export_shell_script(paddleocr_repo: Path, data_dir: Path, train_output_dir: Path, inference_dir: Path) -> str:
+    config_path = data_dir / "rec_doclaynet.yml"
+    tools_export = paddleocr_repo / "tools" / "export_model.py"
+    return f"""#!/usr/bin/env bash
+set -e
+
+TRAIN_DIR="{train_output_dir.as_posix()}"
+if [ -f "$TRAIN_DIR/best_accuracy.pdparams" ]; then
+    CKPT="$TRAIN_DIR/best_accuracy"
+elif [ -f "$TRAIN_DIR/latest.pdparams" ]; then
+    CKPT="$TRAIN_DIR/latest"
+else
+    CKPT_FILE=$(ls -t "$TRAIN_DIR"/*.pdparams 2>/dev/null | head -n 1 || true)
+    if [ -n "$CKPT_FILE" ]; then
+        CKPT="${{CKPT_FILE%.pdparams}}"
+    else
+        CKPT="$TRAIN_DIR/latest"
+    fi
+fi
+
+echo "Exporting PaddleOCR checkpoint: $CKPT"
+python "{tools_export.as_posix()}" \\
+    -c "{config_path.as_posix()}" \\
+    -o Global.pretrained_model="$CKPT" \\
+       Global.save_inference_dir="{inference_dir.as_posix()}"
+"""
 
 
 def ensure_paddleocr_repo(paddleocr_repo: Path):

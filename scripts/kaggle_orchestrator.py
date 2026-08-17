@@ -15,7 +15,7 @@ def parse_args():
     parser.add_argument("--config", default="configs/kaggle_accounts.example.yaml")
     parser.add_argument("--work-dir", default="kaggle_remote_jobs")
     parser.add_argument("--action", choices=["prepare", "push", "status", "output", "delete", "all"], default="prepare")
-    parser.add_argument("--job", help="Run the action for one job name only, for example paddleocr-vl.")
+    parser.add_argument("--job", help="Run the action for one job name only, for example paddleocr-ft or paddleocr-vl.")
     parser.add_argument("--poll-seconds", type=int, default=120)
     parser.add_argument("--max-wait-minutes", type=int, default=720)
     return parser.parse_args()
@@ -94,12 +94,33 @@ def prepare_jobs(config, work_dir: Path):
 def render_job_script(config, job):
     repo_url = config["repo_url"]
     limit = int(job.get("limit", config.get("limit", 20)))
-    engines = " ".join(job["engines"])
+    epochs = int(job.get("epochs", 10))
+    engines = " ".join(job.get("engines", []))
     install_files = job.get("install_files", [])
     install_lines = "\n".join(
         f"run(['python', '-m', 'pip', 'install', '-q', '-r', '{req}'])" for req in install_files
     )
     slug = job_slug(job["name"])
+    is_finetune = job.get("job_type") == "finetune" or "paddleocr_ft" in job.get("engines", []) or "paddleocr-ft" in job["name"]
+    finetune_model = job.get("finetune_model", "paddleocr")
+
+    finetune_block = ""
+    zip_targets = f"results_{slug} prefetch_{slug} job_debug_{slug}.log"
+    if is_finetune:
+        zip_targets += " ocr_finetune_outputs"
+        finetune_block = f"""
+    write_log('=== Running Finetune Pipeline: {finetune_model} ({epochs} epochs) ===')
+    run([
+        'python', '-m', 'ocr_benchmark.finetune',
+        '--config', 'configs/kaggle_doclaynet_science.yaml',
+        '--models', '{finetune_model}',
+        '--limit', '{limit}',
+        '--epochs', '{epochs}',
+        '--output-dir', str(FINETUNE_DIR),
+        '--execute',
+    ])
+"""
+
     return f"""import os
 import shutil
 import subprocess
@@ -110,6 +131,7 @@ from pathlib import Path
 LOG_PATH = Path('/kaggle/working/job_debug_{slug}.log')
 RESULT_DIR = Path('/kaggle/working/results_{slug}')
 PREFETCH_DIR = Path('/kaggle/working/prefetch_{slug}')
+FINETUNE_DIR = Path('/kaggle/working/ocr_finetune_outputs')
 
 
 def run(cmd):
@@ -142,9 +164,10 @@ try:
 
     run(['python', '-m', 'pip', 'install', '-q', '-r', 'requirements.txt'])
 {indent_lines(install_lines, 4)}
-
+{indent_lines(finetune_block, 4)}
     run([
         'python', '-m', 'ocr_benchmark.prefetch_models',
+        '--config', 'configs/kaggle_doclaynet_science.yaml',
         '--engines', *'{engines}'.split(),
         '--output-dir', str(PREFETCH_DIR),
     ])
@@ -167,7 +190,7 @@ finally:
     run([
         'bash', '-lc',
         'cd /kaggle/working && zip -qr results_{slug}.zip '
-        'results_{slug} prefetch_{slug} job_debug_{slug}.log || true'
+        '{zip_targets} || true'
     ])
 """
 
