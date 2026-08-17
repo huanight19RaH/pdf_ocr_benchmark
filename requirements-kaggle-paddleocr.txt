@@ -1,3 +1,7 @@
 --extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
 paddlepaddle==3.2.1; platform_system == "Linux"
 paddleocr
+lmdb
+pyclipper
+shapely
+visualdl

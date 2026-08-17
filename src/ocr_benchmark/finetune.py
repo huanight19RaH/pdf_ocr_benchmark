@@ -450,6 +450,12 @@ python "{tools_export.as_posix()}" \\
 
 
 def ensure_paddleocr_repo(paddleocr_repo: Path):
+    try:
+        import lmdb  # noqa
+    except ImportError:
+        import sys
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "lmdb", "pyclipper", "shapely", "visualdl"], check=False)
+
     if (paddleocr_repo / "tools" / "train.py").exists():
         return
     if paddleocr_repo.exists():
