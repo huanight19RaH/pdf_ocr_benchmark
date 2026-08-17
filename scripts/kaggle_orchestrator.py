@@ -25,7 +25,10 @@ def main():
     args = parse_args()
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
     if args.job:
-        config["jobs"] = [job for job in config["jobs"] if job["name"] == args.job]
+        matched = [job for job in config["jobs"] if job["name"] == args.job]
+        if not matched and args.job in {"finetune-paddleocr", "paddleocr-ft"}:
+            matched = [job for job in config["jobs"] if job["name"] in {"finetune-paddleocr", "paddleocr-ft"}]
+        config["jobs"] = matched
         if not config["jobs"]:
             raise KeyError(f"No job named '{args.job}' in {args.config}")
     if args.action == "delete" and not args.job:
@@ -48,7 +51,7 @@ def main():
         for job, job_dir in job_dirs:
             out_dir = work_dir / "outputs" / job["name"]
             if out_dir.exists():
-                shutil.rmtree(out_dir)
+                shutil.rmtree(out_dir, ignore_errors=True)
             out_dir.mkdir(parents=True, exist_ok=True)
             result = run_kaggle(job, ["kernels", "output", kernel_id(job), "-p", str(out_dir), "--force"], check=False)
             print(f"\n[{job['name']}: output {kernel_id(job)}]\n{result.stdout}{result.stderr}", flush=True)
@@ -101,25 +104,29 @@ def render_job_script(config, job):
         f"run(['python', '-m', 'pip', 'install', '-q', '-r', '{req}'])" for req in install_files
     )
     slug = job_slug(job["name"])
-    is_finetune = job.get("job_type") == "finetune" or "paddleocr_ft" in job.get("engines", []) or "paddleocr-ft" in job["name"]
+    is_finetune = (
+        job.get("job_type") == "finetune"
+        or "paddleocr_ft" in job.get("engines", [])
+        or "paddleocr-ft" in job["name"]
+        or "finetune" in job["name"]
+        or bool(job.get("is_finetune", False))
+    )
     finetune_model = job.get("finetune_model", "paddleocr")
 
     finetune_block = ""
     zip_targets = f"results_{slug} prefetch_{slug} job_debug_{slug}.log"
     if is_finetune:
         zip_targets += " ocr_finetune_outputs"
-        finetune_block = f"""
-    write_log('=== Running Finetune Pipeline: {finetune_model} ({epochs} epochs) ===')
-    run([
-        'python', '-m', 'ocr_benchmark.finetune',
-        '--config', 'configs/kaggle_doclaynet_science.yaml',
-        '--models', '{finetune_model}',
-        '--limit', '{limit}',
-        '--epochs', '{epochs}',
-        '--output-dir', str(FINETUNE_DIR),
-        '--execute',
-    ])
-"""
+        finetune_block = f"""write_log('=== Running Finetune Pipeline: {finetune_model} ({epochs} epochs) ===')
+run([
+    'python', '-m', 'ocr_benchmark.finetune',
+    '--config', 'configs/kaggle_doclaynet_science.yaml',
+    '--models', '{finetune_model}',
+    '--limit', '{limit}',
+    '--epochs', '{epochs}',
+    '--output-dir', str(FINETUNE_DIR),
+    '--execute',
+])"""
 
     return f"""import os
 import shutil
@@ -187,9 +194,14 @@ finally:
     os.chdir('/kaggle/working')
     if Path('/kaggle/working/ocr_benchmark').exists():
         shutil.rmtree('/kaggle/working/ocr_benchmark', ignore_errors=True)
+    if Path('/kaggle/working/PaddleOCR').exists():
+        shutil.rmtree('/kaggle/working/PaddleOCR', ignore_errors=True)
+    rec_data_dir = Path('/kaggle/working/ocr_finetune_outputs/paddleocr/paddleocr_rec_dataset/images')
+    if rec_data_dir.exists():
+        shutil.rmtree(rec_data_dir, ignore_errors=True)
     run([
         'bash', '-lc',
-        'cd /kaggle/working && zip -qr results_{slug}.zip '
+        'cd /kaggle/working && zip -qr {slug}.zip '
         '{zip_targets} || true'
     ])
 """
@@ -233,6 +245,8 @@ def run_kaggle(job, args, check=True):
     elif legacy_token_file.exists():
         data = json.loads(legacy_token_file.read_text(encoding="utf-8"))
         env["KAGGLE_API_TOKEN"] = data["key"]
+        env["KAGGLE_KEY"] = data["key"]
+        env["KAGGLE_USERNAME"] = data.get("username", job.get("username", ""))
     return subprocess.run([sys.executable, "-m", "kaggle", *args], check=check, env=env, capture_output=True, text=True)
 
 
