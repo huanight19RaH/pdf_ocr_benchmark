@@ -45,6 +45,9 @@ try:
 {% for command in install_commands %}
     run({{ command }})
 {% endfor %}
+{% for command in finetune_commands %}
+    run({{ command }})
+{% endfor %}
 {% for command in run_commands %}
     run({{ command }})
 {% endfor %}
@@ -59,6 +62,5 @@ finally:
     run([
         "bash",
         "-lc",
-        f"cd /kaggle/working && zip -qr results_{SLUG}.zip results_{SLUG} prefetch_{SLUG} job_debug_{SLUG}.log || true",
+        f"cd /kaggle/working && zip -qr results_{SLUG}.zip results_{SLUG} prefetch_{SLUG} job_debug_{SLUG}.log ocr_finetune_outputs || true",
     ])
-
