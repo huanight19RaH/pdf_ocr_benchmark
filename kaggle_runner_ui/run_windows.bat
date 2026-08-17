@@ -1,6 +1,8 @@
 @echo off
-setlocal
+title Kaggle Multi-Account Control Hub
 cd /d "%~dp0"
-python -m pip install -r requirements.txt
-python -m streamlit run app.py
-
+echo =======================================================
+echo  Starting Kaggle Multi-Account & Multi-Thread Web Hub
+echo =======================================================
+python server.py --port 8080 --open-browser
+pause

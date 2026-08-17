@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kaggle Multi-Account & Multi-Thread Control Hub</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+  <!-- Chart.js for high-performance interactive visual charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <!-- App Container -->
+  <div class="app-layout">
+    
+    <!-- Top Navigation Header -->
+    <header class="app-header">
+      <div class="header-left">
+        <div class="brand-logo">
+          <span class="logo-icon">⚡</span>
+          <div class="brand-info">
+            <span class="brand-title">KAGGLE CONTROL HUB</span>
+            <span class="brand-subtitle">Multi-Account & Multi-Thread OCR Engine</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="project-selector-wrapper">
+          <label for="projectSelector">📂 Project:</label>
+          <select id="projectSelector" class="custom-select">
+            <option value="pdf_ocr_benchmark">pdf_ocr_benchmark</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="connection-status">
+          <span class="status-dot online"></span>
+          <span class="status-label">FastAPI Core Active</span>
+        </div>
+        <button id="btnQuickRunAll" class="btn btn-primary">
+          <span>⚡ Run All Parallel</span>
+        </button>
+        <button id="btnQuickRefresh" class="btn btn-secondary">
+          <span>🔄 Refresh</span>
+        </button>
+        <button id="btnQuickDownload" class="btn btn-secondary">
+          <span>📥 Download All</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs Bar -->
+    <nav class="tabs-nav">
+      <button class="nav-tab active" data-tab="tab-dashboard">
+        <span class="tab-icon">🚀</span> Dashboard & Quotas
+      </button>
+      <button class="nav-tab" data-tab="tab-threads">
+        <span class="tab-icon">🧵</span> Multi-Thread Jobs
+        <span id="threadCountBadge" class="tab-badge">0</span>
+      </button>
+      <button class="nav-tab" data-tab="tab-ai-chat">
+        <span class="tab-icon">🤖</span> AI Assistant
+      </button>
+      <button class="nav-tab" data-tab="tab-analytics">
+        <span class="tab-icon">📊</span> Benchmark Analytics
+      </button>
+      <button class="nav-tab" data-tab="tab-logs">
+        <span class="tab-icon">📜</span> Live Logs & Debug
+      </button>
+      <button class="nav-tab" data-tab="tab-settings">
+        <span class="tab-icon">⚙️</span> Accounts & Git
+      </button>
+    </nav>
+
+    <!-- Main Content Body -->
+    <main class="app-main">
+
+      <!-- ========================================================= -->
+      <!-- TAB 1: DASHBOARD & GPU QUOTAS -->
+      <!-- ========================================================= -->
+      <section id="tab-dashboard" class="tab-pane active">
+        <div class="pane-header">
+          <div>
+            <h2>⚡ Kaggle Accounts & GPU Quota Tracker</h2>
+            <p class="text-muted">Theo dõi hạn mức GPU 30 giờ/tuần và số lượng active batch GPU slots (tối đa 2 slots/account).</p>
+          </div>
+          <button id="btnScanQuotas" class="btn btn-accent">🔍 Scan All Quotas</button>
+        </div>
+
+        <!-- Accounts Grid -->
+        <div id="accountsGrid" class="accounts-grid">
+          <!-- Rendered dynamically by JS -->
+          <div class="loading-spinner">Đang tải danh sách tài khoản...</div>
+        </div>
+
+        <!-- Quick Summary Stats Bar -->
+        <div class="dashboard-stats-bar">
+          <div class="stat-box">
+            <span class="stat-label">Tổng Tài khoản:</span>
+            <span id="totalAccountsVal" class="stat-value">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Active GPU Slots:</span>
+            <span id="totalActiveSlotsVal" class="stat-value text-cyan">0 / 0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Tổng số Luồng (Jobs):</span>
+            <span id="totalJobsVal" class="stat-value text-indigo">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Trạng thái Hệ thống:</span>
+            <span class="stat-value text-emerald">Ready</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TAB 2: MULTI-THREAD JOBS -->
+      <!-- ========================================================= -->
+      <section id="tab-threads" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>🧵 Quản lý Đa Luồng (Multi-Thread Jobs Matrix)</h2>
+            <p class="text-muted">Điều phối, cấu hình, thêm mới và thực thi từng luồng chạy trên từng tài khoản Kaggle độc lập.</p>
+          </div>
+          <div class="pane-actions">
+            <button id="btnOpenAddJobModal" class="btn btn-primary">➕ Thêm Luồng Mới</button>
+            <button id="btnRefreshJobsStatus" class="btn btn-secondary">🔄 Cập nhật Trạng thái</button>
+          </div>
+        </div>
+
+        <!-- Jobs Matrix Table Card -->
+        <div class="card table-card">
+          <table class="custom-table" id="jobsTable">
+            <thead>
+              <tr>
+                <th>Tên Luồng (Job)</th>
+                <th>Tài khoản</th>
+                <th>Kaggle Kernel ID</th>
+                <th>Loại & Engines</th>
+                <th>GPU Tăng tốc</th>
+                <th>Trạng thái</th>
+                <th>Thao tác</th>
+              </tr>
+            </thead>
+            <tbody id="jobsTableBody">
+              <!-- Rendered dynamically by JS -->
+              <tr><td colspan="7" class="text-center">Đang tải danh sách luồng...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TAB 3: AI ASSISTANT & CHATBOT -->
+      <!-- ========================================================= -->
+      <section id="tab-ai-chat" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>🤖 Antigravity AI Assistant Companion</h2>
+            <p class="text-muted">Giao tiếp bằng ngôn ngữ tự nhiên để điều khiển các tài khoản, kiểm tra tiến độ, bắt lỗi và chạy tác vụ tự động.</p>
+          </div>
+        </div>
+
+        <!-- Suggested Prompt Pills -->
+        <div class="prompt-pills">
+          <span class="prompt-pill" data-prompt="Kiểm tra quota GPU của các tài khoản">🔍 Quota GPU các tài khoản</span>
+          <span class="prompt-pill" data-prompt="Kiểm tra trạng thái các luồng">📊 Trạng thái các luồng</span>
+          <span class="prompt-pill" data-prompt="Chạy tất cả các luồng">⚡ Chạy tất cả các luồng</span>
+          <span class="prompt-pill" data-prompt="Tải kết quả và tổng hợp báo cáo">📥 Tải kết quả & Báo cáo</span>
+          <span class="prompt-pill" data-prompt="Phân tích lỗi gần nhất trong log">🔍 Phân tích lỗi log</span>
+        </div>
+
+        <!-- Chat Container -->
+        <div class="chat-container">
+          <div id="chatMessages" class="chat-messages">
+            <!-- Initial Greeting -->
+            <div class="message assistant">
+              <div class="message-avatar">🤖</div>
+              <div class="message-bubble">
+                <p>👋 <strong>Xin chào! Tôi là Antigravity AI Assistant.</strong></p>
+                <p>Tôi có thể giúp bạn tự động kiểm tra quota GPU của các tài khoản, điều khiển các luồng chạy song song, phân tích nguyên nhân lỗi log và xuất bảng so sánh OCR benchmark.</p>
+                <p>Bạn muốn thực hiện thao tác nào ngay bây giờ?</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Chat Input Bar -->
+          <div class="chat-input-bar">
+            <input type="text" id="chatInput" placeholder="Nhập câu lệnh điều khiển hoặc câu hỏi cho AI Assistant (VD: Chạy các luồng, Kiểm tra quota...)..." />
+            <button id="btnSendChat" class="btn btn-primary">Gửi 🚀</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TAB 4: BENCHMARK ANALYTICS -->
+      <!-- ========================================================= -->
+      <section id="tab-analytics" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>📊 Phân tích Kết quả Benchmark & Leaderboard</h2>
+            <p class="text-muted">So sánh đối soát trực tiếp giữa các mô hình OCR và hiệu quả của việc Finetune trên DocLayNet scientific articles.</p>
+          </div>
+          <button id="btnDownloadCSV" class="btn btn-secondary">📥 Tải File CSV Báo Cáo</button>
+        </div>
+
+        <!-- Charts Grid -->
+        <div class="analytics-charts-grid">
+          <div class="card chart-card">
+            <h3>🎯 Tỷ lệ Lỗi (CER & WER - Càng thấp càng tốt)</h3>
+            <div class="chart-wrapper">
+              <canvas id="chartErrors"></canvas>
+            </div>
+          </div>
+
+          <div class="card chart-card">
+            <h3>⚡ Thông lượng Nhận diện (Ký tự / Giây - Càng cao càng tốt)</h3>
+            <div class="chart-wrapper">
+              <canvas id="chartSpeed"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary Table -->
+        <div class="card table-card" style="margin-top: 20px;">
+          <h3>🏆 Bảng Tổng hợp Chỉ số Chi tiết (Summary Table)</h3>
+          <div id="analyticsTableContainer">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TAB 5: LIVE LOGS & DEBUG -->
+      <!-- ========================================================= -->
+      <section id="tab-logs" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>📜 Nhật ký Thực thi Thời gian thực (Live Logs & Debug)</h2>
+            <p class="text-muted">Đọc log chi tiết từ các máy chủ Kaggle GPU và phát hiện nguyên nhân lỗi tự động.</p>
+          </div>
+          <div class="pane-actions">
+            <select id="logFileSelect" class="custom-select">
+              <option value="">Đang tải danh sách file log...</option>
+            </select>
+            <select id="logTailLines" class="custom-select" style="width: 120px;">
+              <option value="50">50 dòng</option>
+              <option value="100" selected>100 dòng</option>
+              <option value="200">200 dòng</option>
+              <option value="500">500 dòng</option>
+            </select>
+            <button id="btnRefreshLog" class="btn btn-secondary">🔄 Refresh Log</button>
+          </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="log-search-bar">
+          <input type="text" id="logSearchInput" placeholder="🔍 Lọc từ khóa trong log (VD: Traceback, Error, Loss, Epoch, ModuleNotFoundError)..." />
+        </div>
+
+        <!-- Log Terminal Output View -->
+        <div class="card terminal-card">
+          <div class="terminal-header">
+            <div class="terminal-dots">
+              <span class="dot red"></span>
+              <span class="dot yellow"></span>
+              <span class="dot green"></span>
+            </div>
+            <span id="currentLogName" class="terminal-title">Console Output</span>
+          </div>
+          <pre id="logOutputContainer" class="terminal-content">Chọn một file log để xem nội dung...</pre>
+        </div>
+      </section>
+
+      <!-- ========================================================= -->
+      <!-- TAB 6: ACCOUNTS & GIT -->
+      <!-- ========================================================= -->
+      <section id="tab-settings" class="tab-pane">
+        <div class="pane-header">
+          <div>
+            <h2>⚙️ Cấu hình Tài khoản Kaggle & Git Sync</h2>
+            <p class="text-muted">Quản lý danh sách tài khoản, cập nhật API tokens và đồng bộ mã nguồn với GitHub.</p>
+          </div>
+        </div>
+
+        <div class="settings-grid">
+          <!-- Left: Add Account Form -->
+          <div class="card">
+            <h3>➕ Thêm Tài khoản Kaggle Mới</h3>
+            <form id="formAddAccount" class="custom-form">
+              <div class="form-group">
+                <label>Account ID (Tên định danh):</label>
+                <input type="text" id="newAccId" placeholder="account4, my_kaggle_2" required />
+              </div>
+              <div class="form-group">
+                <label>Kaggle Username:</label>
+                <input type="text" id="newAccUser" placeholder="rah1111, hungnguyen" required />
+              </div>
+              <button type="submit" class="btn btn-primary" style="width: 100%;">Lưu Tài khoản Mới</button>
+            </form>
+          </div>
+
+          <!-- Right: Token Manager -->
+          <div class="card">
+            <h3>🔑 Cập nhật Token cho Tài khoản</h3>
+            <div class="form-group">
+              <label>Chọn Tài khoản:</label>
+              <select id="tokenAccountSelect" class="custom-select" style="width: 100%;">
+                <!-- Dynamic options -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Import file kaggle.json:</label>
+              <input type="file" id="fileKaggleJson" accept=".json" />
+              <button id="btnUploadKaggleJson" class="btn btn-secondary" style="margin-top: 8px; width: 100%;">Upload kaggle.json</button>
+            </div>
+
+            <div class="form-group" style="margin-top: 15px;">
+              <label>Hoặc Dán API Key / Token trực tiếp:</label>
+              <input type="password" id="inputApiKey" placeholder="Nhập API Token key..." />
+              <button id="btnSaveApiKey" class="btn btn-secondary" style="margin-top: 8px; width: 100%;">Lưu Token Key</button>
+            </div>
+
+            <button id="btnValidateToken" class="btn btn-accent" style="margin-top: 10px; width: 100%;">🔍 Kiểm tra tính hợp lệ của Token này</button>
+            <div id="tokenValidationResult" class="token-validation-box"></div>
+          </div>
+        </div>
+
+        <!-- Git Sync Section -->
+        <div class="card" style="margin-top: 20px;">
+          <h3>🐙 Đồng bộ Git Repository</h3>
+          <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <button id="btnGitStatus" class="btn btn-secondary">Xem Git Status</button>
+            <button id="btnGitPush" class="btn btn-primary">Git Push</button>
+          </div>
+          <pre id="gitStatusOutput" class="terminal-content" style="max-height: 180px;">Nhấn "Xem Git Status" để kiểm tra thay đổi mã nguồn...</pre>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ========================================================= -->
+  <!-- MODAL: ADD THREAD / JOB -->
+  <!-- ========================================================= -->
+  <div id="modalAddJob" class="modal-overlay">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>📝 Cấu hình Luồng Mới (Create New Thread)</h3>
+        <button id="btnCloseAddJobModal" class="btn-close">✕</button>
+      </div>
+      <form id="formAddJob" class="custom-form">
+        <div class="form-group">
+          <label>Tên Luồng (Job Name):</label>
+          <input type="text" id="jobFormName" placeholder="finetune-paddleocr, surya-exp, docling-test" required />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Gán Tài khoản (Account):</label>
+            <select id="jobFormAccount" class="custom-select" required></select>
+          </div>
+          <div class="form-group">
+            <label>Loại Luồng (Job Type):</label>
+            <select id="jobFormType" class="custom-select">
+              <option value="benchmark">Benchmark</option>
+              <option value="finetune">Finetuning (10 Epochs)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Phần cứng Tăng tốc:</label>
+            <select id="jobFormGpu" class="custom-select">
+              <option value="NvidiaTeslaT4">GPU Tesla T4 (Standard)</option>
+              <option value="NvidiaTeslaP100">GPU Tesla P100</option>
+              <option value="TPU">TPU v3-8</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Số lượng trang (Limit):</label>
+            <input type="number" id="jobFormLimit" value="20" min="1" max="500" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>Mô hình OCR (Engines):</label>
+          <div class="checkbox-group">
+            <label><input type="checkbox" name="engines" value="paddleocr" checked> paddleocr</label>
+            <label><input type="checkbox" name="engines" value="docling"> docling</label>
+            <label><input type="checkbox" name="engines" value="surya"> surya</label>
+            <label><input type="checkbox" name="engines" value="paddleocr_vl"> paddleocr_vl</label>
+            <label><input type="checkbox" name="engines" value="paddleocr_ft"> paddleocr_ft (Finetuned)</label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label>File Dependency (requirements):</label>
+          <input type="text" id="jobFormReqs" value="requirements-kaggle-paddleocr.txt" />
+        </div>
+
+        <div id="finetuneOptions" class="form-row" style="display: none;">
+          <div class="form-group">
+            <label>Mô hình Finetune Mục tiêu:</label>
+            <select id="jobFormFtModel" class="custom-select">
+              <option value="paddleocr">PaddleOCR Recognition</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Số Epochs:</label>
+            <input type="number" id="jobFormEpochs" value="10" min="1" max="100" />
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" id="btnCancelAddJob" class="btn btn-secondary">Hủy</button>
+          <button type="submit" class="btn btn-primary">Lưu & Tạo Luồng</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <!-- Main JavaScript App Logic -->
+  <script src="/static/app.js"></script>
+</body>
+</html>
