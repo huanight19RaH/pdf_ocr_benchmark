@@ -7,7 +7,13 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from jinja2 import Environment, FileSystemLoader
 
-from .kaggle_api import cancel_kernel, run_kaggle
+from .kaggle_api import (
+    cancel_kernel,
+    download_kernel_output,
+    push_kernel,
+    query_kernel_status,
+    run_kaggle,
+)
 from .project_config import ROOT, resolve_tool_path
 
 WORK_DIR = ROOT / "work"
@@ -119,11 +125,11 @@ def command_to_list(command: str) -> str:
 
 
 def push_job(account: Dict[str, Any], job_dir: Path) -> Any:
-    return run_kaggle(account, ["kernels", "push", "-p", str(job_dir)], timeout=300)
+    return push_kernel(account, job_dir)
 
 
-def status_job(account: Dict[str, Any], job: Dict[str, Any]) -> Any:
-    return run_kaggle(account, ["kernels", "status", kernel_id(account, job)], timeout=120)
+def status_job(account: Dict[str, Any], job: Dict[str, Any], force_refresh: bool = False) -> Any:
+    return query_kernel_status(account, kernel_id(account, job), force_refresh=force_refresh)
 
 
 def stop_job(account: Dict[str, Any], job: Dict[str, Any]) -> Any:
@@ -134,7 +140,7 @@ def stop_job(account: Dict[str, Any], job: Dict[str, Any]) -> Any:
 def download_job_output(project_name: str, account: Dict[str, Any], job: Dict[str, Any]) -> Tuple[Path, Any]:
     out_dir = OUTPUTS_DIR / project_name / job["name"]
     out_dir.mkdir(parents=True, exist_ok=True)
-    res = run_kaggle(account, ["kernels", "output", kernel_id(account, job), "-p", str(out_dir), "--force"], timeout=600)
+    res = download_kernel_output(account, kernel_id(account, job), out_dir)
     return out_dir, res
 
 
