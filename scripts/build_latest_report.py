@@ -169,6 +169,8 @@ def diagnose_row(row) -> str:
         return "PaddleOCR API cu dang cu; can push/rerun adapter fix bo cls=True."
     if "ncclCommShrink" in error or "libtorch_cuda" in error:
         return "PaddleOCR-VL loi CUDA/NCCL; dung requirement CPU default moi hoac fresh Kaggle session."
+    if "pad_token_id" in error and "surya" in error.lower():
+        return "SuryaDecoderConfig thieu pad_token_id; can pin transformers<=4.44.2 va patch adapter."
     if "docker binary not found" in error and "surya" in error.lower():
         return "Surya v2 can Docker/vLLM; can pin surya-ocr==0.17.1 va rerun fresh kernel."
     if "--langs" in error and "surya" in error.lower():

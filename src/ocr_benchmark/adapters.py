@@ -147,6 +147,45 @@ class PaddleOCREngine(BaseEngine):
         return EngineResult(text="\n".join(_collect_strings(result)), raw={"items": _safe_repr(result)[:2000]})
 
 
+def patch_surya_transformers_compatibility():
+    """Defensive monkey-patch for Surya OCR + Transformers pad_token_id compatibility."""
+    try:
+        from transformers.configuration_utils import PretrainedConfig
+
+        if not hasattr(PretrainedConfig, "pad_token_id"):
+            setattr(PretrainedConfig, "pad_token_id", None)
+
+        if not getattr(PretrainedConfig, "_surya_pad_token_patched", False):
+            orig_init = PretrainedConfig.__init__
+
+            def _patched_init(self, *args, **kwargs):
+                orig_init(self, *args, **kwargs)
+                if "pad_token_id" in kwargs:
+                    self.pad_token_id = kwargs["pad_token_id"]
+                elif not hasattr(self, "pad_token_id") or self.pad_token_id is None:
+                    self.pad_token_id = getattr(self, "decoder_pad_token_id", None) or getattr(self, "pad_token_id", None)
+
+            PretrainedConfig.__init__ = _patched_init
+            PretrainedConfig._surya_pad_token_patched = True
+    except Exception:
+        pass
+
+    try:
+        import sys
+
+        for mod_name, mod in list(sys.modules.items()):
+            if mod is None:
+                continue
+            if "surya" in mod_name or "transformers_modules" in mod_name:
+                for attr in ("SuryaDecoderConfig", "SuryaConfig", "DecoderConfig"):
+                    cls = getattr(mod, attr, None)
+                    if cls is not None and isinstance(cls, type):
+                        if not hasattr(cls, "pad_token_id"):
+                            setattr(cls, "pad_token_id", None)
+    except Exception:
+        pass
+
+
 class SuryaEngine(BaseEngine):
     name = "surya"
 
@@ -154,12 +193,13 @@ class SuryaEngine(BaseEngine):
         super().__init__(config)
         os.environ.setdefault("RECOGNITION_BATCH_SIZE", str(self.config.get("recognition_batch_size", 128)))
         os.environ.setdefault("DETECTOR_BATCH_SIZE", str(self.config.get("detector_batch_size", 24)))
+        patch_surya_transformers_compatibility()
         self.python_engine = self._try_python_engine()
         if self.python_engine is not None:
             return
         self.command = shutil.which("surya_ocr") or shutil.which("surya")
         if not self.command:
-            raise RuntimeError("Surya CLI not found. Install with: pip install surya-ocr")
+            raise RuntimeError("Surya CLI not found and Python engine failed. Install with: pip install surya-ocr")
 
     def predict(self, image_path: Path) -> EngineResult:
         if self.python_engine is not None:
@@ -199,11 +239,13 @@ class SuryaEngine(BaseEngine):
             raise RuntimeError("Surya command failed after all CLI variants:\n\n" + "\n\n---\n\n".join(attempt_errors))
 
     def _try_python_engine(self):
+        patch_surya_transformers_compatibility()
         try:
             from surya.detection import DetectionPredictor
             from surya.foundation import FoundationPredictor
             from surya.recognition import RecognitionPredictor
 
+            patch_surya_transformers_compatibility()
             foundation = FoundationPredictor()
             return {
                 "api": "surya_v1",
@@ -213,6 +255,7 @@ class SuryaEngine(BaseEngine):
         except Exception:
             pass
         try:
+            patch_surya_transformers_compatibility()
             from surya.ocr import run_ocr
             from surya.model.detection.model import load_model as load_det_model
             from surya.model.detection.processor import load_processor as load_det_processor
@@ -312,7 +355,7 @@ def _collect_strings(value):
         for item in value:
             strings.extend(_collect_strings(item))
         return strings
-    for attr in ("text", "content", "markdown"):
+    for attr in ("text", "content", "markdown", "text_lines", "lines", "words", "paragraphs", "blocks"):
         if hasattr(value, attr):
             strings.extend(_collect_strings(getattr(value, attr)))
     return strings

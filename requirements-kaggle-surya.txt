@@ -1,3 +1,5 @@
 # Pin Surya v1 for Kaggle. Newer Surya v2 auto-spawns vLLM/llama.cpp
 # backends and needs Docker or llama-server, which Kaggle kernels do not provide.
+# Pin transformers <= 4.44.2 to maintain compatibility with surya-ocr 0.17.1 (avoid missing pad_token_id).
 surya-ocr==0.17.1
+transformers>=4.40.0,<=4.44.2

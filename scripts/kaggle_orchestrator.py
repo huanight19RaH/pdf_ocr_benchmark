@@ -14,7 +14,8 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Create, submit, monitor, and download Kaggle OCR benchmark jobs.")
     parser.add_argument("--config", default="configs/kaggle_accounts.example.yaml")
     parser.add_argument("--work-dir", default="kaggle_remote_jobs")
-    parser.add_argument("--action", choices=["prepare", "push", "status", "output", "all"], default="prepare")
+    parser.add_argument("--action", choices=["prepare", "push", "status", "output", "delete", "all"], default="prepare")
+    parser.add_argument("--job", help="Run the action for one job name only, for example paddleocr-vl.")
     parser.add_argument("--poll-seconds", type=int, default=120)
     parser.add_argument("--max-wait-minutes", type=int, default=720)
     return parser.parse_args()
@@ -23,6 +24,12 @@ def parse_args():
 def main():
     args = parse_args()
     config = yaml.safe_load(Path(args.config).read_text(encoding="utf-8"))
+    if args.job:
+        config["jobs"] = [job for job in config["jobs"] if job["name"] == args.job]
+        if not config["jobs"]:
+            raise KeyError(f"No job named '{args.job}' in {args.config}")
+    if args.action == "delete" and not args.job:
+        raise ValueError("--action delete requires --job so you do not delete every kernel by accident.")
     work_dir = Path(args.work_dir)
     job_dirs = prepare_jobs(config, work_dir)
 
@@ -43,8 +50,14 @@ def main():
             if out_dir.exists():
                 shutil.rmtree(out_dir)
             out_dir.mkdir(parents=True, exist_ok=True)
-            result = run_kaggle(job, ["kernels", "output", kernel_id(job), "-p", str(out_dir)], check=False)
+            result = run_kaggle(job, ["kernels", "output", kernel_id(job), "-p", str(out_dir), "--force"], check=False)
             print(f"\n[{job['name']}: output {kernel_id(job)}]\n{result.stdout}{result.stderr}", flush=True)
+    if args.action == "delete":
+        for job, job_dir in job_dirs:
+            result = run_kaggle(job, ["kernels", "delete", "-y", kernel_id(job)], check=False)
+            print(f"\n[{job['name']}: delete {kernel_id(job)}]\n{result.stdout}{result.stderr}", flush=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"Delete failed for {job['name']} ({kernel_id(job)})")
 
 
 def prepare_jobs(config, work_dir: Path):
