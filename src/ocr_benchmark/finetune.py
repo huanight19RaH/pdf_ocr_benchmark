@@ -456,14 +456,23 @@ def ensure_paddleocr_repo(paddleocr_repo: Path):
         import sys
         subprocess.run([sys.executable, "-m", "pip", "install", "-q", "lmdb", "pyclipper", "shapely", "visualdl"], check=False)
 
-    if (paddleocr_repo / "tools" / "train.py").exists():
-        return
-    if paddleocr_repo.exists():
-        shutil.rmtree(paddleocr_repo)
-    subprocess.run(
-        ["git", "clone", "--depth", "1", "https://github.com/PaddlePaddle/PaddleOCR.git", str(paddleocr_repo)],
-        check=True,
-    )
+    if not (paddleocr_repo / "tools" / "train.py").exists():
+        if paddleocr_repo.exists():
+            shutil.rmtree(paddleocr_repo)
+        subprocess.run(
+            ["git", "clone", "--depth", "1", "https://github.com/PaddlePaddle/PaddleOCR.git", str(paddleocr_repo)],
+            check=True,
+        )
+
+    # Patch PaddleOCR tools/program.py for PaddlePaddle 3.x ParallelEnv compatibility
+    program_py = paddleocr_repo / "tools" / "program.py"
+    if program_py.exists():
+        try:
+            content = program_py.read_text(encoding="utf-8")
+            patched = content.replace("dist.ParallelEnv().dev_id", "0").replace("dist.ParallelEnv().device_id", "0")
+            program_py.write_text(patched, encoding="utf-8")
+        except Exception:
+            pass
 
 
 def finetune_note(model, status):
