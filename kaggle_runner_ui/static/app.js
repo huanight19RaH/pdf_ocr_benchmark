@@ -82,7 +82,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const targetPane = document.getElementById(targetId);
       if (targetPane) targetPane.classList.add('active');
 
-      // Refresh specific tab contents on entry
       if (targetId === 'tab-analytics') loadAnalytics();
       if (targetId === 'tab-logs') loadLogs();
       if (targetId === 'tab-threads') loadJobsStatus();
@@ -116,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.activeProject = state.projects[0].name;
       }
     } catch (err) {
-      showToast('Lỗi tải danh sách projects: ' + err.message, 'error');
+      showToast('Failed to load projects: ' + err.message, 'error');
     }
   }
 
@@ -129,14 +128,14 @@ document.addEventListener('DOMContentLoaded', () => {
       updateAccountsDropdowns();
       updateDashboardStats();
     } catch (err) {
-      showToast('Lỗi tải danh sách tài khoản: ' + err.message, 'error');
+      showToast('Failed to load accounts: ' + err.message, 'error');
     }
   }
 
   function renderAccountsGrid() {
     accountsGrid.innerHTML = '';
     if (state.accounts.length === 0) {
-      accountsGrid.innerHTML = '<div class="card" style="grid-column: 1/-1;">Chưa có tài khoản nào. Hãy mở tab "Accounts & Git" để thêm tài khoản mới.</div>';
+      accountsGrid.innerHTML = '<div class="card" style="grid-column: 1/-1;">No accounts found. Use the Accounts & Git tab to add one.</div>';
       return;
     }
 
@@ -145,11 +144,11 @@ document.addEventListener('DOMContentLoaded', () => {
       card.className = 'account-card';
       const pct = Math.min(100, (acc.gpu_hours_used / acc.gpu_hours_total) * 100);
       const badgeClass = acc.token_valid ? 'badge-active' : 'badge-error';
-      const badgeText = acc.token_valid ? '🟢 Hoạt động' : '🔴 Token Thiếu / Lỗi';
+      const badgeText = acc.token_valid ? 'Token Valid' : 'Token Invalid / Missing';
 
       let runningInfo = '';
       if (acc.running_kernels && acc.running_kernels.length > 0) {
-        runningInfo = `<div style="font-size: 0.78rem; color: #38bdf8; margin-top: 8px;">Đang chạy: <code>${acc.running_kernels.join(', ')}</code></div>`;
+        runningInfo = `<div style="font-size: 0.78rem; color: #38bdf8; margin-top: 8px;">Active: <code>${acc.running_kernels.join(', ')}</code></div>`;
       }
 
       card.innerHTML = `
@@ -165,7 +164,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <b>${acc.active_sessions} / ${acc.max_sessions} slots</b>
         </div>
         <div class="account-metric-row">
-          <span>GPU Quota còn lại:</span>
+          <span>Remaining GPU Quota:</span>
           <b>${acc.gpu_hours_remaining.toFixed(1)}h / ${acc.gpu_hours_total.toFixed(0)}h</b>
         </div>
         <div class="progress-bar-wrapper">
@@ -215,24 +214,24 @@ document.addEventListener('DOMContentLoaded', () => {
       renderJobsTable();
       updateDashboardStats();
     } catch (err) {
-      showToast('Lỗi cập nhật trạng thái luồng: ' + err.message, 'error');
+      showToast('Failed to refresh thread status: ' + err.message, 'error');
     }
   }
 
   function renderJobsTable() {
     jobsTableBody.innerHTML = '';
     if (state.jobs.length === 0) {
-      jobsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">Chưa có luồng nào được cấu hình trong project này.</td></tr>';
+      jobsTableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No threads configured for this project.</td></tr>';
       return;
     }
 
     state.jobs.forEach(job => {
       const tr = document.createElement('tr');
-      let statusBadge = '<span class="account-badge">⚪ IDLE</span>';
-      if (job.status === 'COMPLETE') statusBadge = '<span class="account-badge badge-complete">🟢 COMPLETE</span>';
-      else if (job.status === 'RUNNING') statusBadge = '<span class="account-badge badge-running">🔵 RUNNING</span>';
-      else if (job.status === 'QUEUED') statusBadge = '<span class="account-badge badge-queued">🟡 QUEUED</span>';
-      else if (job.status === 'ERROR') statusBadge = '<span class="account-badge badge-error">🔴 ERROR</span>';
+      let statusBadge = '<span class="account-badge">IDLE</span>';
+      if (job.status === 'COMPLETE') statusBadge = '<span class="account-badge badge-complete">COMPLETE</span>';
+      else if (job.status === 'RUNNING') statusBadge = '<span class="account-badge badge-running">RUNNING</span>';
+      else if (job.status === 'QUEUED') statusBadge = '<span class="account-badge badge-queued">QUEUED</span>';
+      else if (job.status === 'ERROR') statusBadge = '<span class="account-badge badge-error">ERROR</span>';
 
       tr.innerHTML = `
         <td><strong>${job.name}</strong></td>
@@ -246,16 +245,16 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${statusBadge}</td>
         <td>
           <div class="table-actions">
-            <button class="btn btn-primary btn-sm btn-run-job" data-job="${job.name}" title="Chạy luồng này">▶️</button>
-            <button class="btn btn-secondary btn-sm btn-dl-job" data-job="${job.name}" title="Tải artifacts">📥</button>
-            <button class="btn btn-danger btn-sm btn-del-job" data-job="${job.name}" title="Xóa luồng">🗑️</button>
+            <button class="btn btn-primary btn-sm btn-run-job" data-job="${job.name}" title="Run thread">Run</button>
+            <button class="btn btn-secondary btn-sm btn-dl-job" data-job="${job.name}" title="Download output">Download</button>
+            <button class="btn btn-danger btn-sm btn-del-job" data-job="${job.name}" title="Delete thread">Delete</button>
           </div>
         </td>
       `;
       jobsTableBody.appendChild(tr);
     });
 
-    // Wire up table row action buttons
+    // Action handlers
     document.querySelectorAll('.btn-run-job').forEach(btn => {
       btn.addEventListener('click', () => runSingleJob(btn.getAttribute('data-job')));
     });
@@ -268,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function runSingleJob(jobName) {
-    showToast(`Đang đẩy và kích hoạt luồng ${jobName}...`, 'info');
+    showToast(`Dispatching thread ${jobName}...`, 'info');
     try {
       const res = await fetch('/api/jobs/run', {
         method: 'POST',
@@ -277,18 +276,18 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Đã kích hoạt luồng ${jobName} thành công!`, 'success');
+        showToast(`Thread ${jobName} dispatched successfully.`, 'success');
         loadJobsStatus();
       } else {
-        showToast(`Lỗi kích hoạt luồng: ${data.detail || 'Thất bại'}`, 'error');
+        showToast(`Dispatch failed: ${data.detail || 'Error'}`, 'error');
       }
     } catch (err) {
-      showToast('Lỗi gửi lệnh: ' + err.message, 'error');
+      showToast('Error sending command: ' + err.message, 'error');
     }
   }
 
   async function downloadSingleJob(jobName) {
-    showToast(`Đang tải kết quả luồng ${jobName}...`, 'info');
+    showToast(`Downloading outputs for thread ${jobName}...`, 'info');
     try {
       const res = await fetch('/api/jobs/download', {
         method: 'POST',
@@ -297,25 +296,25 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Đã tải xong kết quả cho ${jobName}!`, 'success');
+        showToast(`Output artifacts downloaded for ${jobName}.`, 'success');
       }
     } catch (err) {
-      showToast('Lỗi tải artifacts: ' + err.message, 'error');
+      showToast('Download error: ' + err.message, 'error');
     }
   }
 
   async function deleteSingleJob(jobName) {
-    if (!confirm(`Bạn có chắc chắn muốn xóa luồng "${jobName}" không?`)) return;
+    if (!confirm(`Are you sure you want to delete thread "${jobName}"?`)) return;
     try {
       const res = await fetch(`/api/jobs/${state.activeProject}/${jobName}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
-        showToast(`Đã xóa luồng ${jobName}`, 'success');
+        showToast(`Thread ${jobName} deleted.`, 'success');
         await loadProjects();
         await loadJobsStatus();
       }
     } catch (err) {
-      showToast('Lỗi xóa luồng: ' + err.message, 'error');
+      showToast('Delete error: ' + err.message, 'error');
     }
   }
 
@@ -323,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 4. Batch Operations
   // ---------------------------------------------------------
   btnQuickRunAll.addEventListener('click', async () => {
-    showToast('Đang kích hoạt toàn bộ các luồng song song trên các tài khoản Kaggle...', 'info');
+    showToast('Dispatching all threads in parallel...', 'info');
     try {
       const res = await fetch('/api/jobs/run', {
         method: 'POST',
@@ -332,11 +331,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Đã kích hoạt ${data.count} luồng chạy song song thành công!`, 'success');
+        showToast(`Dispatched ${data.count} thread(s) in parallel.`, 'success');
         loadJobsStatus();
       }
     } catch (err) {
-      showToast('Lỗi chạy song song: ' + err.message, 'error');
+      showToast('Parallel run error: ' + err.message, 'error');
     }
   });
 
@@ -344,11 +343,11 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAccounts();
     loadJobsStatus();
     loadAnalytics();
-    showToast('Đã làm mới dữ liệu hệ thống.', 'success');
+    showToast('System data refreshed.', 'success');
   });
 
   btnQuickDownload.addEventListener('click', async () => {
-    showToast('Đang tải toàn bộ kết quả từ Kaggle về máy...', 'info');
+    showToast('Downloading all output artifacts from Kaggle...', 'info');
     try {
       const res = await fetch('/api/jobs/download', {
         method: 'POST',
@@ -357,17 +356,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Đã hoàn tất tải toàn bộ kết quả!', 'success');
+        showToast('All artifacts downloaded.', 'success');
         loadAnalytics();
       }
     } catch (err) {
-      showToast('Lỗi tải dữ liệu: ' + err.message, 'error');
+      showToast('Download error: ' + err.message, 'error');
     }
   });
 
   btnScanQuotas.addEventListener('click', () => {
     loadAccounts();
-    showToast('Đã quét cập nhật quota các tài khoản.', 'success');
+    showToast('Account quotas scanned and updated.', 'success');
   });
 
   // ---------------------------------------------------------
@@ -407,16 +406,16 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast(`Đã tạo luồng ${newJob.name} thành công!`, 'success');
+        showToast(`Thread ${newJob.name} created successfully.`, 'success');
         modalAddJob.classList.remove('active');
         formAddJob.reset();
         await loadProjects();
         await loadJobsStatus();
       } else {
-        showToast(data.detail || 'Lỗi tạo luồng.', 'error');
+        showToast(data.detail || 'Failed to create thread.', 'error');
       }
     } catch (err) {
-      showToast('Lỗi gửi request: ' + err.message, 'error');
+      showToast('Request error: ' + err.message, 'error');
     }
   });
 
@@ -451,19 +450,17 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       removeTypingIndicator(typingId);
-      appendChatMessage('assistant', data.response || 'Đã xử lý xong.', data.actions);
+      appendChatMessage('assistant', data.response || 'Action completed.', data.actions);
     } catch (err) {
       removeTypingIndicator(typingId);
-      appendChatMessage('assistant', '⚠️ Xin lỗi, xảy ra lỗi khi kết nối với AI Assistant: ' + err.message);
+      appendChatMessage('assistant', 'Connection error with Assistant: ' + err.message);
     }
   }
 
   function appendChatMessage(role, content, actions = []) {
     const msgDiv = document.createElement('div');
     msgDiv.className = `message ${role}`;
-    const avatar = role === 'assistant' ? '🤖' : '👤';
 
-    // Simple markdown formatting for bold and backticks
     let formatted = content
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
@@ -477,14 +474,10 @@ document.addEventListener('DOMContentLoaded', () => {
         '</div>';
     }
 
-    msgDiv.innerHTML = `
-      <div class="message-avatar">${avatar}</div>
-      <div class="message-bubble">${formatted}${actionsHtml}</div>
-    `;
+    msgDiv.innerHTML = `<div class="message-bubble">${formatted}${actionsHtml}</div>`;
     chatMessages.appendChild(msgDiv);
     chatMessages.scrollTop = chatMessages.scrollHeight;
 
-    // Attach click handlers to action buttons in chat
     msgDiv.querySelectorAll('.chat-action-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         chatInput.value = btn.getAttribute('data-cmd');
@@ -498,10 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const div = document.createElement('div');
     div.id = id;
     div.className = 'message assistant';
-    div.innerHTML = `
-      <div class="message-avatar">🤖</div>
-      <div class="message-bubble" style="color: #94a3b8; font-style: italic;">Antigravity đang xử lý...</div>
-    `;
+    div.innerHTML = `<div class="message-bubble" style="color: #94a3b8; font-style: italic;">Assistant processing...</div>`;
     chatMessages.appendChild(div);
     chatMessages.scrollTop = chatMessages.scrollHeight;
     return id;
@@ -523,7 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const container = document.getElementById('analyticsTableContainer');
       
       if (!data.has_data || !data.summary || data.summary.length === 0) {
-        container.innerHTML = '<p class="text-muted">Chưa có kết quả summary.csv nào. Hãy nhấn "Download All" để đồng bộ kết quả.</p>';
+        container.innerHTML = '<p class="text-muted">No aggregated summary.csv found yet. Click "Download All" to fetch remote results.</p>';
         return;
       }
 
@@ -541,13 +531,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <thead>
           <tr>
             <th>Engine</th>
-            <th>Trạng thái</th>
-            <th>Thành công</th>
+            <th>Status</th>
+            <th>Success Pages</th>
             <th>CER (Char Error)</th>
             <th>WER (Word Error)</th>
             <th>Char F1</th>
-            <th>Độ trễ/Trang (s)</th>
-            <th>Ký tự / Giây</th>
+            <th>Latency/Page (s)</th>
+            <th>Chars / Sec</th>
           </tr>
         </thead>
         <tbody>
@@ -587,8 +577,8 @@ document.addEventListener('DOMContentLoaded', () => {
       data: {
         labels: labels,
         datasets: [
-          { label: 'CER (Ký tự)', data: cerData, backgroundColor: 'rgba(56, 189, 248, 0.8)' },
-          { label: 'WER (Từ)', data: werData, backgroundColor: 'rgba(129, 140, 248, 0.8)' }
+          { label: 'CER (Character)', data: cerData, backgroundColor: 'rgba(56, 189, 248, 0.8)' },
+          { label: 'WER (Word)', data: werData, backgroundColor: 'rgba(129, 140, 248, 0.8)' }
         ]
       },
       options: {
@@ -610,7 +600,7 @@ document.addEventListener('DOMContentLoaded', () => {
       data: {
         labels: labels,
         datasets: [
-          { label: 'Ký tự / Giây', data: speedData, backgroundColor: 'rgba(52, 211, 153, 0.8)' }
+          { label: 'Characters / Second', data: speedData, backgroundColor: 'rgba(52, 211, 153, 0.8)' }
         ]
       },
       options: {
@@ -637,8 +627,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
       logFileSelect.innerHTML = '';
       if (!data.files || data.files.length === 0) {
-        logFileSelect.innerHTML = '<option value="">Chưa có file log nào</option>';
-        logOutputContainer.textContent = 'Chưa có file log tải về local.';
+        logFileSelect.innerHTML = '<option value="">No log files available</option>';
+        logOutputContainer.textContent = 'No log files downloaded yet.';
         return;
       }
 
@@ -660,7 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderLogContent(rawText) {
     if (!rawText) {
-      logOutputContainer.textContent = 'File log trống.';
+      logOutputContainer.textContent = 'Empty log file.';
       return;
     }
     const filter = logSearchInput.value.toLowerCase().trim();
@@ -670,7 +660,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const lines = rawText.split('\n');
     const matched = lines.filter(l => l.toLowerCase().includes(filter));
-    logOutputContainer.textContent = matched.length > 0 ? matched.join('\n') : `Không tìm thấy dòng nào khớp từ khóa "${filter}".`;
+    logOutputContainer.textContent = matched.length > 0 ? matched.join('\n') : `No lines matched "${filter}".`;
   }
 
   logFileSelect.addEventListener('change', () => {
@@ -706,10 +696,10 @@ document.addEventListener('DOMContentLoaded', () => {
         formAddAccount.reset();
         loadAccounts();
       } else {
-        showToast(data.detail || 'Lỗi thêm tài khoản.', 'error');
+        showToast(data.detail || 'Failed to add account.', 'error');
       }
     } catch (err) {
-      showToast('Lỗi kết nối: ' + err.message, 'error');
+      showToast('Connection error: ' + err.message, 'error');
     }
   });
 
@@ -717,7 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const accId = tokenAccountSelect.value;
     const file = fileKaggleJson.files[0];
     if (!file) {
-      showToast('Vui lòng chọn file kaggle.json trước.', 'error');
+      showToast('Please select a kaggle.json file first.', 'error');
       return;
     }
     const formData = new FormData();
@@ -730,11 +720,11 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Đã lưu kaggle.json thành công!', 'success');
+        showToast('kaggle.json uploaded successfully.', 'success');
         loadAccounts();
       }
     } catch (err) {
-      showToast('Lỗi upload: ' + err.message, 'error');
+      showToast('Upload error: ' + err.message, 'error');
     }
   });
 
@@ -751,51 +741,51 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       const data = await res.json();
       if (data.success) {
-        showToast('Đã lưu API Token!', 'success');
+        showToast('API Token saved.', 'success');
         inputApiKey.value = '';
         loadAccounts();
       }
     } catch (err) {
-      showToast('Lỗi lưu token: ' + err.message, 'error');
+      showToast('Save token error: ' + err.message, 'error');
     }
   });
 
   btnValidateToken.addEventListener('click', async () => {
     const accId = tokenAccountSelect.value;
-    tokenValidationResult.innerHTML = '<span class="text-cyan">Đang kiểm tra token...</span>';
+    tokenValidationResult.innerHTML = '<span class="text-cyan">Validating token...</span>';
     try {
       const res = await fetch(`/api/accounts/${accId}/validate`, { method: 'POST' });
       const data = await res.json();
       if (data.ok) {
-        tokenValidationResult.innerHTML = `<span style="color: #34d399;">✅ Token hợp lệ! Username: <b>${data.token_username}</b> (${data.key_len} ký tự)</span>`;
+        tokenValidationResult.innerHTML = `<span style="color: #34d399;">Token valid: <b>${data.token_username}</b> (${data.key_len} chars)</span>`;
       } else {
-        tokenValidationResult.innerHTML = `<span style="color: #f87171;">❌ Token lỗi: ${data.message}</span>`;
+        tokenValidationResult.innerHTML = `<span style="color: #f87171;">Token invalid: ${data.message}</span>`;
       }
     } catch (err) {
-      tokenValidationResult.innerHTML = `<span style="color: #f87171;">❌ Lỗi: ${err.message}</span>`;
+      tokenValidationResult.innerHTML = `<span style="color: #f87171;">Error: ${err.message}</span>`;
     }
   });
 
   btnGitStatus.addEventListener('click', async () => {
-    gitStatusOutput.textContent = 'Đang kiểm tra git status...';
+    gitStatusOutput.textContent = 'Checking git status...';
     try {
       const res = await fetch('/api/git/status');
       const data = await res.json();
       gitStatusOutput.textContent = `Branch: ${data.branch}\n\n${data.status || 'Clean working tree.'}`;
     } catch (err) {
-      gitStatusOutput.textContent = 'Lỗi: ' + err.message;
+      gitStatusOutput.textContent = 'Error: ' + err.message;
     }
   });
 
   btnGitPush.addEventListener('click', async () => {
-    showToast('Đang đẩy git commit lên GitHub...', 'info');
+    showToast('Pushing git commits to remote repository...', 'info');
     try {
       const res = await fetch('/api/git/push', { method: 'POST' });
       const data = await res.json();
       gitStatusOutput.textContent = data.output;
-      showToast('Đã đồng bộ Git thành công!', 'success');
+      showToast('Git push completed.', 'success');
     } catch (err) {
-      showToast('Lỗi git push: ' + err.message, 'error');
+      showToast('Git push error: ' + err.message, 'error');
     }
   });
 

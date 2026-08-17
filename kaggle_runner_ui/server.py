@@ -1,5 +1,4 @@
 import argparse
-import asyncio
 import json
 import os
 import shutil
@@ -9,12 +8,10 @@ import webbrowser
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pandas as pd
 import uvicorn
-import yaml
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -140,16 +137,16 @@ def get_accounts():
 def create_account(data: AccountCreate):
     ok = add_account(data.id.strip(), data.username.strip(), data.token_dir)
     if not ok:
-        raise HTTPException(status_code=400, detail="Tài khoản với ID này đã tồn tại.")
+        raise HTTPException(status_code=400, detail="Account with this ID already exists.")
     assistant.refresh()
-    return {"success": True, "message": f"Đã thêm tài khoản {data.id}"}
+    return {"success": True, "message": f"Account {data.id} created successfully."}
 
 
 @app.delete("/api/accounts/{account_id}")
 def remove_account(account_id: str):
     delete_account(account_id)
     assistant.refresh()
-    return {"success": True, "message": f"Đã xóa tài khoản {account_id}"}
+    return {"success": True, "message": f"Account {account_id} removed."}
 
 
 @app.post("/api/accounts/{account_id}/validate")
@@ -157,7 +154,7 @@ def validate_acc(account_id: str):
     accounts = accounts_by_id()
     account = accounts.get(account_id)
     if not account:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản.")
+        raise HTTPException(status_code=404, detail="Account not found.")
     res = validate_account(account)
     return res
 
@@ -167,12 +164,12 @@ def update_token(account_id: str, data: AccountTokenUpdate):
     accounts = accounts_by_id()
     account = accounts.get(account_id)
     if not account:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản.")
+        raise HTTPException(status_code=404, detail="Account not found.")
     token_dir = resolve_tool_path(account["token_dir"])
     username = data.username or account.get("username", "user")
     if data.token:
         write_kaggle_json(token_dir, username, data.token)
-    return {"success": True, "message": "Đã cập nhật token thành công."}
+    return {"success": True, "message": "API Token updated successfully."}
 
 
 @app.post("/api/accounts/{account_id}/upload_kaggle_json")
@@ -180,12 +177,12 @@ async def upload_kaggle_json_file(account_id: str, file: UploadFile = File(...))
     accounts = accounts_by_id()
     account = accounts.get(account_id)
     if not account:
-        raise HTTPException(status_code=404, detail="Không tìm thấy tài khoản.")
+        raise HTTPException(status_code=404, detail="Account not found.")
     token_dir = resolve_tool_path(account["token_dir"])
     token_dir.mkdir(parents=True, exist_ok=True)
     content = await file.read()
     (token_dir / "kaggle.json").write_bytes(content)
-    return {"success": True, "message": "Đã lưu kaggle.json thành công."}
+    return {"success": True, "message": "kaggle.json saved successfully."}
 
 
 # ---------------------------------------------------------
@@ -202,7 +199,7 @@ def get_jobs_status(project_name: str):
     accounts = accounts_by_id()
     project = next((p for p in projects_cfg.get("projects", []) if p["name"] == project_name), None)
     if not project:
-        raise HTTPException(status_code=404, detail="Không tìm thấy project.")
+        raise HTTPException(status_code=404, detail="Project not found.")
 
     jobs_data = []
     for job in project.get("jobs", []):
@@ -256,14 +253,14 @@ def add_new_job(data: JobCreate):
 
     ok = add_job_to_project(data.project_name, job_dict)
     if not ok:
-        raise HTTPException(status_code=400, detail="Luồng đã tồn tại hoặc không tìm thấy project.")
-    return {"success": True, "message": f"Đã tạo luồng {data.name}"}
+        raise HTTPException(status_code=400, detail="Thread already exists or project not found.")
+    return {"success": True, "message": f"Thread {data.name} created."}
 
 
 @app.delete("/api/jobs/{project_name}/{job_name}")
 def remove_job(project_name: str, job_name: str):
     delete_job_from_project(project_name, job_name)
-    return {"success": True, "message": f"Đã xóa luồng {job_name}"}
+    return {"success": True, "message": f"Thread {job_name} deleted."}
 
 
 @app.post("/api/jobs/run")
@@ -272,16 +269,15 @@ def trigger_run_jobs(data: RunJobsRequest, background_tasks: BackgroundTasks):
     accounts = accounts_by_id()
     project = next((p for p in projects_cfg.get("projects", []) if p["name"] == data.project_name), None)
     if not project:
-        raise HTTPException(status_code=404, detail="Không tìm thấy project.")
+        raise HTTPException(status_code=404, detail="Project not found.")
 
     prepared = prepare_project_jobs(project, accounts)
     if data.job_names:
         prepared = [it for it in prepared if it["job"]["name"] in data.job_names]
 
     if not prepared:
-        raise HTTPException(status_code=400, detail="Không có luồng hợp lệ nào để chạy.")
+        raise HTTPException(status_code=400, detail="No valid threads to execute.")
 
-    # Execute pushes concurrently
     push_tasks = [(push_job, (it["account"], it["job_dir"])) for it in prepared]
     results = run_parallel_tasks(push_tasks, max_workers=len(prepared) or 1)
 
@@ -303,18 +299,18 @@ def stop_single_job(project_name: str = Form(...), job_name: str = Form(...)):
     accounts = accounts_by_id()
     project = next((p for p in projects_cfg.get("projects", []) if p["name"] == project_name), None)
     if not project:
-        raise HTTPException(status_code=404, detail="Không tìm thấy project.")
+        raise HTTPException(status_code=404, detail="Project not found.")
 
     job = next((j for j in project.get("jobs", []) if j["name"] == job_name), None)
     if not job:
-        raise HTTPException(status_code=404, detail="Không tìm thấy luồng.")
+        raise HTTPException(status_code=404, detail="Thread not found.")
 
     acc = accounts.get(job["account_id"])
     if not acc:
-        raise HTTPException(status_code=400, detail="Không tìm thấy account cho luồng này.")
+        raise HTTPException(status_code=400, detail="Account not found for this thread.")
 
     res = stop_job(acc, job)
-    return {"success": True, "message": (res.stdout + res.stderr).strip() or "Đã gửi lệnh dừng."}
+    return {"success": True, "message": (res.stdout + res.stderr).strip() or "Stop signal dispatched."}
 
 
 @app.post("/api/jobs/download")
@@ -323,7 +319,7 @@ def download_artifacts(data: RunJobsRequest):
     accounts = accounts_by_id()
     project = next((p for p in projects_cfg.get("projects", []) if p["name"] == data.project_name), None)
     if not project:
-        raise HTTPException(status_code=404, detail="Không tìm thấy project.")
+        raise HTTPException(status_code=404, detail="Project not found.")
 
     jobs = project.get("jobs", [])
     if data.job_names:
@@ -352,7 +348,6 @@ def get_analytics(project_name: str):
     if combined.empty:
         return {"summary": [], "has_data": False}
 
-    # Convert to JSON serializable list
     summary_data = json.loads(combined.to_json(orient="records"))
     return {"summary": summary_data, "has_data": True}
 
@@ -364,7 +359,7 @@ def get_analytics(project_name: str):
 def get_logs(project_name: str, file_path: Optional[str] = None, max_lines: int = 150):
     project_output_dir = OUTPUTS_DIR / project_name
     if not project_output_dir.exists():
-        return {"files": [], "content": "Chưa có file log nào."}
+        return {"files": [], "content": "No log files available."}
 
     files_dict = find_job_files(project_output_dir)
     log_files = files_dict.get("logs", [])
@@ -439,7 +434,7 @@ def main():
 
     url = f"http://{args.host}:{args.port}"
     print(f"\n=======================================================")
-    print(f"🚀 Kaggle Multi-Account Hub is running at: {url}")
+    print(f"Kaggle Multi-Account Hub server running at: {url}")
     print(f"=======================================================\n")
 
     if args.open_browser:
