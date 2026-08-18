@@ -148,12 +148,59 @@ class PaddleOCREngine(BaseEngine):
 
 
 def patch_surya_transformers_compatibility():
-    """Defensive monkey-patch for Surya OCR + Transformers pad_token_id compatibility."""
+    """Defensive monkey-patch for Surya OCR + Transformers compatibility.
+
+    Handles:
+    - Missing config attributes: `pad_token_id`, `decoder_pad_token_id`, `bbox_size`, token IDs across
+      `PretrainedConfig`, static config classes, and dynamically loaded classes (e.g. SuryaDecoderConfig).
+    - Missing `find_pruneable_heads_and_indices` in transformers.pytorch_utils or modeling_utils.
+    - Dynamic module loader patching to ensure dynamically loaded config classes from Hugging Face hub
+      have the necessary attributes defined.
+    """
+    import sys
+
+    # 1. Patch find_pruneable_heads_and_indices if removed/missing in transformers
+    try:
+        def _find_pruneable_heads_and_indices(heads, n_heads, head_size, already_pruned_heads):
+            try:
+                import torch
+                if len(heads) == 0:
+                    return heads, None
+                heads = set(heads) - set(already_pruned_heads)
+                if len(heads) == 0:
+                    return heads, None
+                mask = torch.ones(n_heads, head_size)
+                for head in sorted(heads):
+                    head_idx = head - sum(1 if h < head else 0 for h in already_pruned_heads)
+                    if head_idx < n_heads:
+                        mask[head_idx] = 0
+                mask = mask.view(-1).contiguous().eq(1)
+                index = torch.arange(len(mask))[mask].long()
+                return heads, index
+            except Exception:
+                return heads, None
+
+        for mod_name in ("transformers.pytorch_utils", "transformers.modeling_utils", "transformers"):
+            try:
+                mod = sys.modules.get(mod_name)
+                if mod is None:
+                    import importlib
+                    mod = importlib.import_module(mod_name)
+                if not hasattr(mod, "find_pruneable_heads_and_indices"):
+                    setattr(mod, "find_pruneable_heads_and_indices", _find_pruneable_heads_and_indices)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # 2. Patch PretrainedConfig class and __init__
     try:
         from transformers.configuration_utils import PretrainedConfig
 
-        if not hasattr(PretrainedConfig, "pad_token_id"):
-            setattr(PretrainedConfig, "pad_token_id", None)
+        # Class level fallbacks
+        for attr in ("pad_token_id", "decoder_pad_token_id", "bbox_size", "bos_token_id", "eos_token_id", "sep_token_id"):
+            if not hasattr(PretrainedConfig, attr):
+                setattr(PretrainedConfig, attr, None)
 
         if not getattr(PretrainedConfig, "_surya_pad_token_patched", False):
             orig_init = PretrainedConfig.__init__
@@ -162,26 +209,52 @@ def patch_surya_transformers_compatibility():
                 orig_init(self, *args, **kwargs)
                 if "pad_token_id" in kwargs:
                     self.pad_token_id = kwargs["pad_token_id"]
-                elif not hasattr(self, "pad_token_id") or self.pad_token_id is None:
+                elif getattr(self, "pad_token_id", None) is None:
                     self.pad_token_id = getattr(self, "decoder_pad_token_id", None) or getattr(self, "pad_token_id", None)
+                if not hasattr(self, "decoder_pad_token_id"):
+                    self.decoder_pad_token_id = getattr(self, "pad_token_id", None)
+                if not hasattr(self, "bbox_size"):
+                    self.bbox_size = None
 
             PretrainedConfig.__init__ = _patched_init
             PretrainedConfig._surya_pad_token_patched = True
     except Exception:
         pass
 
+    # 3. Patch dynamic_module_utils so any Hugging Face Hub dynamically loaded class receives attributes
     try:
-        import sys
+        import transformers.dynamic_module_utils as dmu
+
+        if hasattr(dmu, "get_class_from_dynamic_module") and not getattr(dmu, "_surya_patched", False):
+            orig_get_class = dmu.get_class_from_dynamic_module
+
+            def _patched_get_class(*args, **kwargs):
+                cls = orig_get_class(*args, **kwargs)
+                if isinstance(cls, type):
+                    for attr_name in ("pad_token_id", "decoder_pad_token_id", "bbox_size", "bos_token_id", "eos_token_id", "sep_token_id"):
+                        if not hasattr(cls, attr_name):
+                            setattr(cls, attr_name, None)
+                return cls
+
+            dmu.get_class_from_dynamic_module = _patched_get_class
+            dmu._surya_patched = True
+    except Exception:
+        pass
+
+    # 4. Scan all currently loaded modules for config classes
+    try:
+        target_attrs = ("pad_token_id", "decoder_pad_token_id", "bbox_size", "bos_token_id", "eos_token_id", "sep_token_id")
+        target_names = ("SuryaDecoderConfig", "SuryaConfig", "DecoderConfig", "EfficientViTConfig", "DonutSwinConfig", "MBartConfig")
 
         for mod_name, mod in list(sys.modules.items()):
             if mod is None:
                 continue
-            if "surya" in mod_name or "transformers_modules" in mod_name:
-                for attr in ("SuryaDecoderConfig", "SuryaConfig", "DecoderConfig"):
-                    cls = getattr(mod, attr, None)
-                    if cls is not None and isinstance(cls, type):
-                        if not hasattr(cls, "pad_token_id"):
-                            setattr(cls, "pad_token_id", None)
+            if any(key in mod_name for key in ("surya", "transformers", "dynamic_module")):
+                for name, obj in list(vars(mod).items()):
+                    if isinstance(obj, type) and (name in target_names or name.endswith("Config")):
+                        for attr in target_attrs:
+                            if not hasattr(obj, attr):
+                                setattr(obj, attr, None)
     except Exception:
         pass
 
@@ -240,6 +313,7 @@ class SuryaEngine(BaseEngine):
 
     def _try_python_engine(self):
         patch_surya_transformers_compatibility()
+        errors = []
         try:
             from surya.detection import DetectionPredictor
             from surya.foundation import FoundationPredictor
@@ -252,8 +326,9 @@ class SuryaEngine(BaseEngine):
                 "recognition_predictor": RecognitionPredictor(foundation),
                 "detection_predictor": DetectionPredictor(),
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            errors.append(f"surya_v1 init failed: {exc}")
+
         try:
             patch_surya_transformers_compatibility()
             from surya.ocr import run_ocr
@@ -270,12 +345,17 @@ class SuryaEngine(BaseEngine):
                 "rec_model": load_rec_model(),
                 "rec_processor": load_rec_processor(),
             }
-        except Exception:
-            return None
+        except Exception as exc:
+            errors.append(f"surya_legacy init failed: {exc}")
+
+        if errors:
+            print("[SuryaEngine] Python engine initialization attempts encountered:\n" + "\n".join(f"  - {e}" for e in errors), flush=True)
+        return None
 
     def _predict_python(self, image_path: Path) -> EngineResult:
         from PIL import Image
 
+        patch_surya_transformers_compatibility()
         image = Image.open(image_path).convert("RGB")
         if self.python_engine.get("api") == "surya_v1":
             result = self.python_engine["recognition_predictor"](
