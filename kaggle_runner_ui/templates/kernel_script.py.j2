@@ -59,8 +59,13 @@ finally:
     os.chdir("/kaggle/working")
     if REPO_DIR.exists():
         shutil.rmtree(REPO_DIR, ignore_errors=True)
+    if Path("/kaggle/working/PaddleOCR").exists():
+        shutil.rmtree("/kaggle/working/PaddleOCR", ignore_errors=True)
+    rec_data_dir = Path("/kaggle/working/ocr_finetune_outputs/paddleocr/paddleocr_rec_dataset/images")
+    if rec_data_dir.exists():
+        shutil.rmtree(rec_data_dir, ignore_errors=True)
     run([
         "bash",
         "-lc",
-        f"cd /kaggle/working && zip -qr results_{SLUG}.zip results_{SLUG} prefetch_{SLUG} job_debug_{SLUG}.log ocr_finetune_outputs || true",
+        f"cd /kaggle/working && zip -qr {SLUG}.zip results_{SLUG} prefetch_{SLUG} job_debug_{SLUG}.log ocr_finetune_outputs || true",
     ])
