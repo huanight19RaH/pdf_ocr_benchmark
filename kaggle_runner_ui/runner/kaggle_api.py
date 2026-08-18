@@ -182,6 +182,17 @@ def clear_api_cache(account_id: Optional[str] = None) -> None:
 
 
 # -----------------------------------------------------------------------------
+_TOOL_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _resolve_tool_path(p: Any) -> Path:
+    if not p:
+        return _TOOL_ROOT
+    path = Path(p)
+    return path if path.is_absolute() else _TOOL_ROOT / path
+
+
+# -----------------------------------------------------------------------------
 # Token & Environment Helpers
 # -----------------------------------------------------------------------------
 def read_token(token_dir: Any) -> Dict[str, Any]:
@@ -193,7 +204,7 @@ def read_token(token_dir: Any) -> Dict[str, Any]:
         return {"token": "", "username": None, "source": "", "type": "none"}
 
     try:
-        token_path = Path(token_dir)
+        token_path = _resolve_tool_path(token_dir)
         if not token_path.exists():
             return {"token": "", "username": None, "source": str(token_path), "type": "none"}
 
@@ -232,7 +243,7 @@ def read_token(token_dir: Any) -> Dict[str, Any]:
 
 
 def write_kaggle_json(token_dir: Any, username: str, key: str) -> Path:
-    token_dir = Path(token_dir)
+    token_dir = _resolve_tool_path(token_dir)
     token_dir.mkdir(parents=True, exist_ok=True)
     path = token_dir / "kaggle.json"
     path.write_text(json.dumps({"username": username.strip(), "key": key.strip()}, indent=2), encoding="utf-8")
@@ -241,7 +252,7 @@ def write_kaggle_json(token_dir: Any, username: str, key: str) -> Path:
 
 
 def write_access_token(token_dir: Any, token: str) -> Path:
-    token_dir = Path(token_dir)
+    token_dir = _resolve_tool_path(token_dir)
     token_dir.mkdir(parents=True, exist_ok=True)
     path = token_dir / "access_token"
     path.write_text(token.strip(), encoding="utf-8")
@@ -253,7 +264,7 @@ def kaggle_env(account: Dict[str, Any]) -> Dict[str, str]:
     env = os.environ.copy()
     token_dir_val = account.get("token_dir")
     if token_dir_val:
-        token_dir = Path(token_dir_val).resolve()
+        token_dir = _resolve_tool_path(token_dir_val)
         token_info = read_token(token_dir)
         env["KAGGLE_CONFIG_DIR"] = str(token_dir)
         if token_info["token"]:
