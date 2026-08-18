@@ -384,16 +384,17 @@ async def download_artifacts(data: RunJobsRequest):
 async def get_analytics(project_name: str):
     results_dir = OUTPUTS_DIR / project_name
     fallback_dir = ROOT.parent / "kaggle_remote_jobs" / "outputs"
-    target_dir = results_dir if results_dir.exists() else fallback_dir
+    target_dir = results_dir
+    is_main_project = project_name in {"pdf_ocr_benchmark", "default"}
 
     combined_raw = await asyncio.to_thread(combine_summaries, target_dir, deduplicate_engine=False)
     combined = await asyncio.to_thread(combine_summaries, target_dir, deduplicate_engine=True)
-    if combined.empty and fallback_dir.exists() and fallback_dir != target_dir:
+    if combined.empty and is_main_project and fallback_dir.exists():
         combined_raw = await asyncio.to_thread(combine_summaries, fallback_dir, deduplicate_engine=False)
         combined = await asyncio.to_thread(combine_summaries, fallback_dir, deduplicate_engine=True)
 
     finetune_df = await asyncio.to_thread(collect_finetune_status, target_dir)
-    if finetune_df.empty and fallback_dir.exists() and fallback_dir != target_dir:
+    if finetune_df.empty and is_main_project and fallback_dir.exists():
         finetune_df = await asyncio.to_thread(collect_finetune_status, fallback_dir)
 
     comparison_data = []
