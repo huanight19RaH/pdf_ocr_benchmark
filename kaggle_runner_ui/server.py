@@ -384,6 +384,7 @@ async def download_artifacts(data: RunJobsRequest):
 async def get_analytics(project_name: str):
     results_dir = OUTPUTS_DIR / project_name
     fallback_dir = ROOT.parent / "kaggle_remote_jobs" / "outputs"
+    target_dir = results_dir if results_dir.exists() else fallback_dir
 
     combined_raw = await asyncio.to_thread(combine_summaries, target_dir, deduplicate_engine=False)
     combined = await asyncio.to_thread(combine_summaries, target_dir, deduplicate_engine=True)
