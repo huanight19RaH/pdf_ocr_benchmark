@@ -48,7 +48,15 @@ from runner.kaggle_api import (
     write_access_token,
     write_kaggle_json,
 )
-from runner.log_reader import combine_summaries, find_job_files, read_csv, read_jsonl, read_text_tail
+from runner.log_reader import (
+    build_comparison_table,
+    collect_finetune_status,
+    combine_summaries,
+    find_job_files,
+    read_csv,
+    read_jsonl,
+    read_text_tail,
+)
 from runner.project_config import (
     ROOT,
     accounts_by_id,
@@ -375,15 +383,32 @@ async def download_artifacts(data: RunJobsRequest):
 @app.get("/api/analytics/{project_name}")
 async def get_analytics(project_name: str):
     results_dir = OUTPUTS_DIR / project_name
-    if not results_dir.exists():
-        return {"summary": [], "has_data": False}
+    fallback_dir = ROOT.parent / "kaggle_remote_jobs" / "outputs"
 
-    combined = await asyncio.to_thread(combine_summaries, results_dir)
-    if combined.empty:
-        return {"summary": [], "has_data": False}
+    combined_raw = await asyncio.to_thread(combine_summaries, target_dir, deduplicate_engine=False)
+    combined = await asyncio.to_thread(combine_summaries, target_dir, deduplicate_engine=True)
+    if combined.empty and fallback_dir.exists() and fallback_dir != target_dir:
+        combined_raw = await asyncio.to_thread(combine_summaries, fallback_dir, deduplicate_engine=False)
+        combined = await asyncio.to_thread(combine_summaries, fallback_dir, deduplicate_engine=True)
 
-    summary_data = json.loads(combined.to_json(orient="records"))
-    return {"summary": summary_data, "has_data": True}
+    finetune_df = await asyncio.to_thread(collect_finetune_status, target_dir)
+    if finetune_df.empty and fallback_dir.exists() and fallback_dir != target_dir:
+        finetune_df = await asyncio.to_thread(collect_finetune_status, fallback_dir)
+
+    comparison_data = []
+    if not combined_raw.empty:
+        comparison_data = build_comparison_table(combined_raw)
+
+    summary_data = json.loads(combined.to_json(orient="records")) if not combined.empty else []
+    finetune_data = json.loads(finetune_df.to_json(orient="records")) if not finetune_df.empty else []
+
+    has_data = len(summary_data) > 0 or len(finetune_data) > 0
+    return {
+        "summary": summary_data,
+        "finetune": finetune_data,
+        "comparison": comparison_data,
+        "has_data": has_data,
+    }
 
 
 # ---------------------------------------------------------

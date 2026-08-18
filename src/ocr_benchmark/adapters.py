@@ -111,7 +111,38 @@ class PaddleOCREngine(BaseEngine):
         kwargs = {}
         rec_model_dir = self.config.get("rec_model_dir")
         if rec_model_dir:
-            kwargs["rec_model_dir"] = rec_model_dir
+            rec_model_path = Path(rec_model_dir)
+            if not rec_model_path.exists():
+                raise FileNotFoundError(f"rec_model_dir does not exist: {rec_model_dir}")
+            kwargs["rec_model_dir"] = str(rec_model_path)
+            rec_char_dict_path = self.config.get("rec_char_dict_path")
+            if not rec_char_dict_path:
+                candidates = [
+                    rec_model_path / "dict.txt",
+                    rec_model_path.parent / "paddleocr_rec_dataset" / "dict.txt",
+                    rec_model_path.parent / "dict.txt",
+                ]
+                for cand in candidates:
+                    if cand.exists():
+                        rec_char_dict_path = str(cand)
+                        break
+            if rec_char_dict_path and Path(rec_char_dict_path).exists():
+                kwargs["rec_char_dict_path"] = str(rec_char_dict_path)
+
+        # Detect GPU availability to avoid crashes on CPU
+        try:
+            import paddle
+            cuda_avail = False
+            if hasattr(paddle, "is_compiled_with_cuda") and paddle.is_compiled_with_cuda():
+                if hasattr(paddle.device, "cuda") and hasattr(paddle.device.cuda, "device_count"):
+                    cuda_avail = paddle.device.cuda.device_count() > 0
+                else:
+                    cuda_avail = True
+            if not cuda_avail:
+                kwargs["use_gpu"] = False
+        except Exception:
+            kwargs["use_gpu"] = False
+
         init_attempts = [
             {"use_angle_cls": True, "lang": lang, **kwargs},
             {"lang": lang, **kwargs},
@@ -122,7 +153,7 @@ class PaddleOCREngine(BaseEngine):
             try:
                 self.ocr = PaddleOCR(**init_kwargs)
                 return
-            except TypeError as exc:
+            except (TypeError, ValueError, RuntimeError, Exception) as exc:
                 last_error = exc
         raise last_error
 

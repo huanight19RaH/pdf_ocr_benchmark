@@ -511,17 +511,117 @@ document.addEventListener('DOMContentLoaded', () => {
       const res = await fetch(`/api/analytics/${state.activeProject}`);
       const data = await res.json();
       const container = document.getElementById('analyticsTableContainer');
-      
-      if (!data.has_data || !data.summary || data.summary.length === 0) {
-        container.innerHTML = '<p class="text-muted">No aggregated summary.csv found yet. Click "Download All" to fetch remote results.</p>';
+
+      if (!data.has_data) {
+        if (container) container.innerHTML = '<p class="text-muted">No benchmark or finetuning results found yet. Click "Download All" to fetch remote outputs.</p>';
         return;
       }
 
-      renderAnalyticsTable(data.summary);
-      renderAnalyticsCharts(data.summary);
+      if (data.summary && data.summary.length > 0) {
+        renderAnalyticsTable(data.summary);
+        renderAnalyticsCharts(data.summary);
+      } else if (container) {
+        container.innerHTML = '<p class="text-muted">No summary.csv files found. Download remote results to populate.</p>';
+      }
+
+      renderFinetuneComparison(data.comparison);
+      renderFinetuneStatusTable(data.finetune);
     } catch (err) {
       console.error(err);
     }
+  }
+
+  function renderFinetuneComparison(comparison) {
+    const container = document.getElementById('finetuneComparisonContainer');
+    if (!container) return;
+
+    if (!comparison || comparison.length === 0) {
+      container.innerHTML = '<p class="text-muted">Head-to-head comparison between pretrained paddleocr and fine-tuned paddleocr_ft will appear here once finetuning artifacts are collected.</p>';
+      return;
+    }
+
+    let html = `
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>Performance Metric</th>
+            <th>Pretrained Baseline (PaddleOCR)</th>
+            <th>Finetuned 10-Epochs (PaddleOCR-FT)</th>
+            <th>Impact & Delta</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    comparison.forEach(row => {
+      let impactBadge = '';
+      const diffStr = row.difference || 'N/A';
+      if (diffStr.includes('[Improved]')) {
+        impactBadge = `<span class="account-badge badge-active">${diffStr}</span>`;
+      } else if (diffStr.includes('[Degraded]')) {
+        impactBadge = `<span class="account-badge badge-error">${diffStr}</span>`;
+      } else {
+        impactBadge = `<code>${diffStr}</code>`;
+      }
+
+      html += `
+        <tr>
+          <td><strong>${row.metric || ''}</strong></td>
+          <td><code>${row.pretrained || 'N/A'}</code></td>
+          <td><code>${row.finetuned || 'N/A'}</code></td>
+          <td>${impactBadge}</td>
+        </tr>
+      `;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  function renderFinetuneStatusTable(finetuneList) {
+    const container = document.getElementById('finetuneStatusContainer');
+    if (!container) return;
+
+    if (!finetuneList || finetuneList.length === 0) {
+      container.innerHTML = '<p class="text-muted">No finetuning execution status logs found. Run a finetune thread to train on DocLayNet.</p>';
+      return;
+    }
+
+    let html = `
+      <table class="custom-table">
+        <thead>
+          <tr>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Epochs</th>
+            <th>Train Samples</th>
+            <th>Val Samples</th>
+            <th>Diagnostics / Details</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+
+    finetuneList.forEach(row => {
+      let badgeClass = 'badge-secondary';
+      if (row.status === 'trained' || row.status === 'ok') badgeClass = 'badge-complete';
+      else if (row.status === 'failed' || row.status === 'error') badgeClass = 'badge-error';
+      else if (row.status === 'prepared') badgeClass = 'badge-active';
+
+      html += `
+        <tr>
+          <td><strong>${row.model || 'N/A'}</strong></td>
+          <td><span class="account-badge ${badgeClass}">${row.status || 'N/A'}</span></td>
+          <td>${row.epochs || 10}</td>
+          <td>${row.train_samples || 0}</td>
+          <td>${row.val_samples || 0}</td>
+          <td style="font-size: 0.8rem; color: #94a3b8; max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${row.note || ''}">${row.note || 'N/A'}</td>
+        </tr>
+      `;
+    });
+
+    html += '</tbody></table>';
+    container.innerHTML = html;
   }
 
   function renderAnalyticsTable(summary) {

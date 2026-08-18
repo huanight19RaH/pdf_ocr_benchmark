@@ -206,6 +206,30 @@
           <h3>Aggregated Performance Metrics</h3>
           <div id="analyticsTableContainer"></div>
         </div>
+
+        <!-- Pretrained vs Finetuned Comparison Table -->
+        <div class="card table-card" style="margin-top: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin-bottom: 0;">Pretrained vs. Finetuned Head-to-Head Comparison (PaddleOCR vs. PaddleOCR-FT)</h3>
+            <span class="account-badge badge-active">10-Epochs CRNN/SVTR</span>
+          </div>
+          <p class="text-muted" style="margin-bottom: 15px; font-size: 0.85rem;">
+            Comparative analysis of baseline pretrained weights vs. fine-tuned recognition weights on DocLayNet scientific articles.
+          </p>
+          <div id="finetuneComparisonContainer"></div>
+        </div>
+
+        <!-- Finetune Pipeline Diagnostics -->
+        <div class="card table-card" style="margin-top: 20px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <h3 style="margin-bottom: 0;">Finetuning Pipeline Execution & Crop Diagnostics</h3>
+            <span class="account-badge badge-secondary">Dataset & Training Runs</span>
+          </div>
+          <p class="text-muted" style="margin-bottom: 15px; font-size: 0.85rem;">
+            Training sample extraction count, validation splits, and model export status across supported OCR engines.
+          </p>
+          <div id="finetuneStatusContainer"></div>
+        </div>
       </section>
 
       <!-- ========================================================= -->

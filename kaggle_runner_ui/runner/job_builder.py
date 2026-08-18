@@ -69,13 +69,19 @@ def build_context(
     config_path = project.get("config_path", "configs/kaggle_doclaynet_science.yaml")
     limit = str(job.get("limit", project.get("limit", 20)))
     epochs = str(job.get("epochs", 10))
-    job_type = job.get("job_type", "benchmark")
+    is_finetune = (
+        job.get("job_type") == "finetune"
+        or "paddleocr_ft" in job.get("engines", [])
+        or "paddleocr-ft" in job.get("name", "")
+        or "finetune" in job.get("name", "")
+        or bool(job.get("is_finetune", False))
+    )
     finetune_model = job.get("finetune_model", "paddleocr")
 
     setup_commands = project.get("commands", {}).get("setup") or ["python -m pip install -q -r requirements.txt"]
 
-    # Generate custom run / finetune commands if job_type == 'finetune'
-    if job_type == "finetune":
+    # Generate custom run / finetune commands if job is finetune
+    if is_finetune:
         finetune_commands = [
             f"python -m ocr_benchmark.finetune --config {config_path} --models {finetune_model} --limit {limit} --epochs {epochs} --output-dir /kaggle/working/ocr_finetune_outputs --execute"
         ]

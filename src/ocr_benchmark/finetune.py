@@ -1,5 +1,6 @@
 import argparse
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -55,20 +56,21 @@ def main():
                 prepared = prepare_paddleocr_rec_dataset(samples, model_dir, runtime_cfg, epochs=args.epochs)
                 train_output_dir = model_dir / "train_output"
                 inference_dir = model_dir / "inference"
+                repo_path = Path(args.paddleocr_repo)
                 command = build_paddleocr_train_command(
-                    paddleocr_repo=Path(args.paddleocr_repo),
+                    paddleocr_repo=repo_path,
                     data_dir=prepared["data_dir"],
                     epochs=args.epochs,
                     output_dir=train_output_dir,
                 )
                 export_command = build_paddleocr_export_command(
-                    paddleocr_repo=Path(args.paddleocr_repo),
+                    paddleocr_repo=repo_path,
                     data_dir=prepared["data_dir"],
                     checkpoint_prefix=train_output_dir / "best_accuracy",
                     inference_dir=inference_dir,
                 )
                 safe_export_script = build_safe_export_shell_script(
-                    paddleocr_repo=Path(args.paddleocr_repo),
+                    paddleocr_repo=repo_path,
                     data_dir=prepared["data_dir"],
                     train_output_dir=train_output_dir,
                     inference_dir=inference_dir,
@@ -85,16 +87,19 @@ def main():
                     "note": "PaddleOCR recognition finetune dataset, train command, and safe export script prepared.",
                 }
                 if args.execute:
-                    ensure_paddleocr_repo(Path(args.paddleocr_repo))
-                    subprocess.run(command, check=True)
+                    ensure_paddleocr_repo(repo_path)
+                    sub_env = os.environ.copy()
+                    sub_env["PYTHONPATH"] = f"{repo_path.resolve()}{os.pathsep}{sub_env.get('PYTHONPATH', '')}"
+                    subprocess.run(command, check=True, env=sub_env)
                     ckpt_prefix = resolve_checkpoint_prefix(train_output_dir)
                     actual_export_command = build_paddleocr_export_command(
-                        paddleocr_repo=Path(args.paddleocr_repo),
+                        paddleocr_repo=repo_path,
                         data_dir=prepared["data_dir"],
                         checkpoint_prefix=ckpt_prefix,
                         inference_dir=inference_dir,
                     )
-                    subprocess.run(actual_export_command, check=True)
+                    subprocess.run(actual_export_command, check=True, env=sub_env)
+                    finalize_inference_dir(prepared["data_dir"], inference_dir)
                     row["status"] = "trained"
                     row["note"] = f"Training ({args.epochs} epochs) and export completed from checkpoint '{ckpt_prefix.name}'."
                 status_rows.append(row)
@@ -132,17 +137,31 @@ def main():
 
 
 def detect_use_gpu() -> bool:
+    """Safely and accurately detect if PaddlePaddle has CUDA acceleration available."""
     try:
         import paddle
-        if hasattr(paddle, "is_compiled_with_cuda") and paddle.is_compiled_with_cuda():
-            if hasattr(paddle.device, "cuda") and paddle.device.cuda.device_count() > 0:
-                return True
-            return True
-        if hasattr(paddle.device, "is_compiled_with_cuda") and paddle.device.is_compiled_with_cuda():
-            return True
+
+        is_compiled_cuda = False
+        if hasattr(paddle, "is_compiled_with_cuda"):
+            is_compiled_cuda = bool(paddle.is_compiled_with_cuda())
+        elif hasattr(paddle.device, "is_compiled_with_cuda"):
+            is_compiled_cuda = bool(paddle.device.is_compiled_with_cuda())
+
+        if not is_compiled_cuda:
+            return False
+
+        cuda_count = 0
+        if hasattr(paddle.device, "cuda") and hasattr(paddle.device.cuda, "device_count"):
+            cuda_count = paddle.device.cuda.device_count()
+        elif hasattr(paddle, "cuda") and hasattr(paddle.cuda, "device_count"):
+            cuda_count = paddle.cuda.device_count()
+
+        if cuda_count <= 0:
+            return False
+
+        return True
     except Exception:
-        pass
-    return False
+        return False
 
 
 def prepare_paddleocr_rec_dataset(samples, output_dir: Path, runtime_cfg, epochs: int):
@@ -389,7 +408,6 @@ def resolve_checkpoint_prefix(train_output_dir: Path) -> Path:
 find_paddleocr_checkpoint = resolve_checkpoint_prefix
 
 
-
 def build_paddleocr_train_command(paddleocr_repo: Path, data_dir: Path, epochs: int, output_dir: Path):
     config_path = data_dir / "rec_doclaynet.yml"
     return [
@@ -419,6 +437,22 @@ def build_paddleocr_export_command(paddleocr_repo: Path, data_dir: Path, checkpo
     ]
 
 
+def finalize_inference_dir(data_dir: Path, inference_dir: Path):
+    """Ensure inference directory has inference.yml and dict.txt for PaddleOCR loading."""
+    inference_dir = Path(inference_dir)
+    inference_dir.mkdir(parents=True, exist_ok=True)
+
+    config_file = data_dir / "rec_doclaynet.yml"
+    inf_yml = inference_dir / "inference.yml"
+    if not inf_yml.exists() and config_file.exists():
+        shutil.copy2(config_file, inf_yml)
+
+    dict_file = data_dir / "dict.txt"
+    inf_dict = inference_dir / "dict.txt"
+    if dict_file.exists() and not inf_dict.exists():
+        shutil.copy2(dict_file, inf_dict)
+
+
 def build_safe_export_shell_script(paddleocr_repo: Path, data_dir: Path, train_output_dir: Path, inference_dir: Path) -> str:
     config_path = data_dir / "rec_doclaynet.yml"
     tools_export = paddleocr_repo / "tools" / "export_model.py"
@@ -440,35 +474,65 @@ else
 fi
 
 echo "Exporting PaddleOCR checkpoint: $CKPT"
+export PYTHONPATH="{paddleocr_repo.as_posix()}:$PYTHONPATH"
 python "{tools_export.as_posix()}" \\
     -c "{config_path.as_posix()}" \\
     -o Global.pretrained_model="$CKPT" \\
        Global.save_inference_dir="{inference_dir.as_posix()}"
+
+mkdir -p "{inference_dir.as_posix()}"
+if [ ! -f "{inference_dir.as_posix()}/inference.yml" ] && [ -f "{config_path.as_posix()}" ]; then
+    cp "{config_path.as_posix()}" "{inference_dir.as_posix()}/inference.yml"
+fi
+if [ -f "{data_dir.as_posix()}/dict.txt" ] && [ ! -f "{inference_dir.as_posix()}/dict.txt" ]; then
+    cp "{data_dir.as_posix()}/dict.txt" "{inference_dir.as_posix()}/dict.txt"
+fi
 """
 
 
+def ensure_paddleocr_repo(paddleocr_repo: Path):
+    """Ensure the PaddleOCR repo is cloned, dependencies installed, and patched for PaddlePaddle 3.x."""
+    paddleocr_repo = Path(paddleocr_repo)
+    import sys
+
+    # 1. Install missing finetuning dependencies if needed
     try:
         import lmdb  # noqa
+        import pyclipper  # noqa
+        import shapely  # noqa
         import albumentations  # noqa
     except ImportError:
-        import sys
-        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "lmdb", "pyclipper", "shapely", "visualdl", "albumentations"], check=False)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-q", "lmdb", "pyclipper", "shapely", "visualdl", "albumentations"],
+            check=False,
+        )
 
+    # 2. Clone PaddleOCR if tools/train.py does not exist
     if not (paddleocr_repo / "tools" / "train.py").exists():
         if paddleocr_repo.exists():
-            shutil.rmtree(paddleocr_repo)
+            shutil.rmtree(paddleocr_repo, ignore_errors=True)
+        paddleocr_repo.parent.mkdir(parents=True, exist_ok=True)
         subprocess.run(
             ["git", "clone", "--depth", "1", "https://github.com/PaddlePaddle/PaddleOCR.git", str(paddleocr_repo)],
             check=True,
         )
 
-    # Patch PaddleOCR tools/program.py for PaddlePaddle 3.x ParallelEnv compatibility
-    program_py = paddleocr_repo / "tools" / "program.py"
-    if program_py.exists():
+    # 3. Defensive patch for PaddlePaddle 3.x compatibility
+    # Paddle 3.x deprecated/changed ParallelEnv().dev_id and device_id
+    for py_file in paddleocr_repo.glob("**/*.py"):
+        if not py_file.is_file():
+            continue
         try:
-            content = program_py.read_text(encoding="utf-8")
-            patched = content.replace("dist.ParallelEnv().dev_id", "0").replace("dist.ParallelEnv().device_id", "0")
-            program_py.write_text(patched, encoding="utf-8")
+            content = py_file.read_text(encoding="utf-8")
+            if "ParallelEnv().dev_id" in content or "ParallelEnv().device_id" in content:
+                patched = (
+                    content
+                    .replace("dist.ParallelEnv().dev_id", "0")
+                    .replace("dist.ParallelEnv().device_id", "0")
+                    .replace("ParallelEnv().dev_id", "0")
+                    .replace("ParallelEnv().device_id", "0")
+                )
+                py_file.write_text(patched, encoding="utf-8")
         except Exception:
             pass
 
