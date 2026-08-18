@@ -129,7 +129,14 @@ class PaddleOCREngine(BaseEngine):
             if rec_char_dict_path and Path(rec_char_dict_path).exists():
                 kwargs["rec_char_dict_path"] = str(rec_char_dict_path)
 
-        # Detect GPU availability to avoid crashes on CPU
+        base_kwargs = {}
+        if "rec_model_dir" in kwargs:
+            base_kwargs["rec_model_dir"] = kwargs["rec_model_dir"]
+        if "rec_char_dict_path" in kwargs:
+            base_kwargs["rec_char_dict_path"] = kwargs["rec_char_dict_path"]
+
+        # Detect GPU availability for legacy PaddleOCR 2.x support
+        gpu_kwargs = {}
         try:
             import paddle
             cuda_avail = False
@@ -139,14 +146,17 @@ class PaddleOCREngine(BaseEngine):
                 else:
                     cuda_avail = True
             if not cuda_avail:
-                kwargs["use_gpu"] = False
+                gpu_kwargs["use_gpu"] = False
         except Exception:
-            kwargs["use_gpu"] = False
+            gpu_kwargs["use_gpu"] = False
 
         init_attempts = [
-            {"use_angle_cls": True, "lang": lang, **kwargs},
-            {"lang": lang, **kwargs},
-            kwargs,
+            {"use_angle_cls": True, "lang": lang, **base_kwargs, **gpu_kwargs},
+            {"use_angle_cls": True, "lang": lang, **base_kwargs},
+            {"lang": lang, **base_kwargs},
+            base_kwargs,
+            {"lang": lang},
+            {},
         ]
         last_error = None
         for init_kwargs in init_attempts:
